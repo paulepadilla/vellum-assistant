@@ -441,7 +441,7 @@ describe("GET /schedules — default defer exclusion", () => {
     expect(noSource.createdFromConversationArchivedAt).toBeNull();
   });
 
-  test("returns authored descriptions separately from cadence descriptions", () => {
+  test("keeps legacy descriptions as cadence and returns authored descriptions separately", () => {
     createSchedule({
       name: "Described schedule",
       description: "Review the morning queue",
@@ -455,6 +455,7 @@ describe("GET /schedules — default defer exclusion", () => {
       schedules: Array<{
         name: string;
         description: string;
+        authoredDescription: string;
         cadenceDescription: string;
       }>;
     };
@@ -462,7 +463,8 @@ describe("GET /schedules — default defer exclusion", () => {
     expect(result.schedules).toHaveLength(1);
     expect(result.schedules[0]).toMatchObject({
       name: "Described schedule",
-      description: "Review the morning queue",
+      description: "Every day at 9:00 AM",
+      authoredDescription: "Review the morning queue",
       cadenceDescription: "Every day at 9:00 AM",
     });
   });
@@ -481,13 +483,15 @@ describe("GET /schedules — default defer exclusion", () => {
       schedules: Array<{
         name: string;
         description: string;
+        authoredDescription: string;
         cadenceDescription: string;
       }>;
     };
 
     expect(result.schedules[0]).toMatchObject({
       name: "One-shot schedule",
-      description: "Send a one-time reminder",
+      description: "One-time",
+      authoredDescription: "Send a one-time reminder",
       cadenceDescription: "One-time",
     });
   });
@@ -1190,12 +1194,17 @@ describe("PATCH /schedules/:id — description", () => {
       pathParams: { id: schedule.id },
       body: { description: "Updated description" },
     }) as {
-      schedules: Array<{ id: string; description: string }>;
+      schedules: Array<{
+        id: string;
+        description: string;
+        authoredDescription: string;
+      }>;
     };
 
     expect(result.schedules[0]).toMatchObject({
       id: schedule.id,
-      description: "Updated description",
+      description: "Every day at 9:00 AM",
+      authoredDescription: "Updated description",
     });
     expect(listSchedules()[0].description).toBe("Updated description");
   });

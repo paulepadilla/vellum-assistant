@@ -20326,6 +20326,8 @@ paths:
                             - type: "null"
                         description:
                           type: string
+                        authoredDescription:
+                          type: string
                         cadenceDescription:
                           type: string
                         mode:
@@ -20377,6 +20379,7 @@ paths:
                         - createdFromConversationExists
                         - createdFromConversationArchivedAt
                         - description
+                        - authoredDescription
                         - cadenceDescription
                         - mode
                         - status
@@ -20476,6 +20479,8 @@ paths:
                             - type: "null"
                         description:
                           type: string
+                        authoredDescription:
+                          type: string
                         cadenceDescription:
                           type: string
                         mode:
@@ -20527,6 +20532,7 @@ paths:
                         - createdFromConversationExists
                         - createdFromConversationArchivedAt
                         - description
+                        - authoredDescription
                         - cadenceDescription
                         - mode
                         - status
@@ -20655,6 +20661,8 @@ paths:
                             - type: "null"
                         description:
                           type: string
+                        authoredDescription:
+                          type: string
                         cadenceDescription:
                           type: string
                         mode:
@@ -20706,6 +20714,7 @@ paths:
                         - createdFromConversationExists
                         - createdFromConversationArchivedAt
                         - description
+                        - authoredDescription
                         - cadenceDescription
                         - mode
                         - status
@@ -20804,6 +20813,8 @@ paths:
                             - type: "null"
                         description:
                           type: string
+                        authoredDescription:
+                          type: string
                         cadenceDescription:
                           type: string
                         mode:
@@ -20855,6 +20866,7 @@ paths:
                         - createdFromConversationExists
                         - createdFromConversationArchivedAt
                         - description
+                        - authoredDescription
                         - cadenceDescription
                         - mode
                         - status
@@ -20998,6 +21010,8 @@ paths:
                             - type: "null"
                         description:
                           type: string
+                        authoredDescription:
+                          type: string
                         cadenceDescription:
                           type: string
                         mode:
@@ -21049,6 +21063,7 @@ paths:
                         - createdFromConversationExists
                         - createdFromConversationArchivedAt
                         - description
+                        - authoredDescription
                         - cadenceDescription
                         - mode
                         - status
@@ -21148,6 +21163,8 @@ paths:
                             - type: "null"
                         description:
                           type: string
+                        authoredDescription:
+                          type: string
                         cadenceDescription:
                           type: string
                         mode:
@@ -21199,6 +21216,7 @@ paths:
                         - createdFromConversationExists
                         - createdFromConversationArchivedAt
                         - description
+                        - authoredDescription
                         - cadenceDescription
                         - mode
                         - status
@@ -21387,6 +21405,8 @@ paths:
                             - type: "null"
                         description:
                           type: string
+                        authoredDescription:
+                          type: string
                         cadenceDescription:
                           type: string
                         mode:
@@ -21438,6 +21458,7 @@ paths:
                         - createdFromConversationExists
                         - createdFromConversationArchivedAt
                         - description
+                        - authoredDescription
                         - cadenceDescription
                         - mode
                         - status
