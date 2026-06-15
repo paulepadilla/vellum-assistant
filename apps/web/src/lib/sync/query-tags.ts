@@ -45,6 +45,20 @@ export function scheduledConversationsQueryKey(assistantId: string | null) {
   return [SCHEDULED_CONVERSATIONS_QUERY_KEY, assistantId ?? ""] as const;
 }
 
+export const ORIGIN_CHANNEL_CONVERSATIONS_QUERY_KEY =
+  "origin-channel-conversations" as const;
+
+export function originChannelConversationsQueryKey(
+  assistantId: string | null,
+  channel: string,
+) {
+  return [
+    ORIGIN_CHANNEL_CONVERSATIONS_QUERY_KEY,
+    assistantId ?? "",
+    channel,
+  ] as const;
+}
+
 /**
  * Build the generated query key for conversation groups. Exported so that
  * invalidation call sites (sync stream, loader, group actions) can target
