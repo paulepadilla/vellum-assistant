@@ -36,6 +36,7 @@ import { useBusSubscription } from "@/hooks/use-bus-subscription";
 import {
   archivedConversationsQueryKey,
   conversationGroupsQueryKey,
+  ORIGIN_CHANNEL_CONVERSATIONS_QUERY_KEY,
 } from "@/lib/sync/query-tags";
 import { getClientId } from "@/lib/telemetry/client-identity";
 import {
@@ -174,8 +175,14 @@ function scheduleConversationListRefetch(
     // The archive view renders rarely and sorts by archive time, so a
     // plain invalidation (refetch only while its observer is mounted)
     // stays cheap and correct. Groups are a single unpaginated GET.
+    // Origin-channel caches are small (~5-30 items) and flat, so a
+    // plain invalidation is cheap — prefix match invalidates all
+    // channels for this assistant, but only refetches mounted ones.
     void queryClient.invalidateQueries({
       queryKey: archivedConversationsQueryKey(assistantId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: [ORIGIN_CHANNEL_CONVERSATIONS_QUERY_KEY, assistantId],
     });
     void queryClient.invalidateQueries({
       queryKey: conversationGroupsQueryKey(assistantId),

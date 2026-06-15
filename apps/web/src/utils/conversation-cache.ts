@@ -34,6 +34,7 @@ import {
   archivedConversationsQueryKey,
   backgroundConversationsQueryKey,
   conversationsQueryKey,
+  ORIGIN_CHANNEL_CONVERSATIONS_QUERY_KEY,
   scheduledConversationsQueryKey,
 } from "@/lib/sync/query-tags";
 import type { Conversation } from "@/types/conversation-types";
@@ -204,10 +205,15 @@ export function updateArchivedConversationsCache(
 
 /**
  * Apply `updater` to all conversation caches (foreground, background,
- * scheduled, and archived). The caches that don't contain the targeted row
- * return their list unchanged, so the write is a no-op there. Callers that
- * mutate a row by id without knowing which bucket a conversation belongs to
- * use this.
+ * scheduled, archived, AND all active origin-channel caches). The caches
+ * that don't contain the targeted row return their list unchanged, so the
+ * write is a no-op there. Callers that mutate a row by id without knowing
+ * which bucket a conversation belongs to use this.
+ *
+ * Origin-channel caches are discovered dynamically via prefix match because
+ * they're parameterized by channel ID (N caches per assistant). Only caches
+ * that TanStack Query is actively tracking are patched — unmounted queries
+ * will refetch fresh data when they re-mount.
  */
 export function updateAllConversationCaches(
   queryClient: QueryClient,
@@ -218,12 +224,38 @@ export function updateAllConversationCaches(
   updateBackgroundConversationsCache(queryClient, assistantId, updater);
   updateScheduledConversationsCache(queryClient, assistantId, updater);
   updateArchivedConversationsCache(queryClient, assistantId, updater);
+  updateOriginChannelCaches(queryClient, assistantId, updater);
 }
 
 /**
- * Read a single conversation from any conversation cache. Used by
- * imperative callers (send pipeline, attention tracking, stream handlers)
- * that need the current value without subscribing to re-renders.
+ * Apply `updater` to all active origin-channel conversation caches for the
+ * given assistant. Uses TanStack Query's prefix matching to dynamically
+ * discover which channel caches exist — no static enumeration needed.
+ */
+function updateOriginChannelCaches(
+  queryClient: QueryClient,
+  assistantId: string | null,
+  updater: ConversationUpdater,
+): void {
+  if (!assistantId) return;
+  const prefix = [ORIGIN_CHANNEL_CONVERSATIONS_QUERY_KEY, assistantId];
+  const entries = queryClient.getQueriesData<Conversation[]>({
+    queryKey: prefix,
+  });
+  for (const [queryKey, data] of entries) {
+    if (!data) continue;
+    const next = updater(data);
+    if (next !== data) {
+      queryClient.setQueryData<Conversation[]>(queryKey, next);
+    }
+  }
+}
+
+/**
+ * Read a single conversation from any conversation cache (static buckets
+ * + dynamic origin-channel caches). Used by imperative callers (send
+ * pipeline, attention tracking, stream handlers) that need the current
+ * value without subscribing to re-renders.
  */
 export function findConversation(
   queryClient: QueryClient,
@@ -236,6 +268,17 @@ export function findConversation(
       ?.find((c) => c.conversationId === key);
     if (match) {
       return match;
+    }
+  }
+  // Also search active origin-channel caches (dynamic, prefix-matched).
+  if (assistantId) {
+    const prefix = [ORIGIN_CHANNEL_CONVERSATIONS_QUERY_KEY, assistantId];
+    const entries = queryClient.getQueriesData<Conversation[]>({
+      queryKey: prefix,
+    });
+    for (const [, data] of entries) {
+      const match = data?.find((c) => c.conversationId === key);
+      if (match) return match;
     }
   }
   return undefined;
