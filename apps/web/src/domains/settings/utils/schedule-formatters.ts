@@ -318,7 +318,11 @@ export function summarizeRunsForUsage(
 ): ScheduleUsageSummary {
   const runsInRange = (runs ?? []).filter((run) => {
     const startedAt = run.startedAt ?? run.createdAt;
-    return startedAt >= range.from && startedAt <= range.to;
+    return (
+      startedAt >= range.from &&
+      startedAt <= range.to &&
+      isUsageCountingRun(run)
+    );
   });
 
   return {
@@ -332,4 +336,10 @@ export function summarizeRunsForUsage(
     }, 0),
     eventCount: 0,
   };
+}
+
+function isUsageCountingRun(run: ScheduleRun): boolean {
+  return !["pending", "skipped", "missed", "superseded"].includes(
+    run.status ?? "",
+  );
 }

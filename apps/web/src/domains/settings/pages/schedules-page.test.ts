@@ -137,6 +137,7 @@ const {
   formatTimestamp,
   groupSchedules,
   pastOneTimeStatus,
+  summarizeRunsForUsage,
   SYSTEM_TASK_URL_IDS,
   systemTaskKindFromUrlId,
 } = await import("@/domains/settings/utils/schedule-formatters");
@@ -451,6 +452,38 @@ describe("scheduleUsageSummaryQueryOptions", () => {
   });
 });
 
+describe("summarizeRunsForUsage", () => {
+  test("ignores skipped no-op attempts in run counts", () => {
+    const summary = summarizeRunsForUsage(
+      SYSTEM_TASK_URL_IDS.heartbeat,
+      [
+        run({
+          id: "heartbeat-ok",
+          status: "ok",
+          startedAt: 1_761_792_000_000,
+          createdAt: 1_761_792_000_000,
+          estimatedCostUsd: 0.02,
+        }),
+        run({
+          id: "heartbeat-skipped",
+          status: "skipped",
+          startedAt: 1_761_792_010_000,
+          createdAt: 1_761_792_010_000,
+          estimatedCostUsd: 0,
+        }),
+      ],
+      { from: 1_761_791_000_000, to: 1_761_793_000_000 },
+    );
+
+    expect(summary).toEqual({
+      scheduleId: SYSTEM_TASK_URL_IDS.heartbeat,
+      runCount: 1,
+      totalEstimatedCostUsd: 0.02,
+      eventCount: 0,
+    });
+  });
+});
+
 describe("SystemTaskDetailView", () => {
   test("loads consolidation runs and renders conversation-backed cost rows", async () => {
     renderWithQueryClient(
@@ -620,6 +653,28 @@ describe("RecentRunsCard", () => {
     expect(document.body.textContent).not.toContain("Run details");
     expect(document.body.textContent).not.toContain("Back to runs");
     expect(routes.settings.schedule("schedule-1")).not.toContain("/runs/");
+  });
+
+  test("skipped no-op runs show their reason while collapsed", () => {
+    render(
+      createElement(RecentRunsCard, {
+        runs: [
+          run({
+            id: "heartbeat-skip-1",
+            status: "skipped",
+            conversationId: null,
+            startedAt: 1_761_792_000_000,
+            durationMs: null,
+            estimatedCostUsd: 0,
+            output: "Skipped: max_daily_runs",
+            error: null,
+          }),
+        ],
+        isLoading: false,
+      }),
+    );
+
+    expect(document.body.textContent).toContain("Skipped: max_daily_runs");
   });
 });
 
