@@ -51,6 +51,7 @@ function parseTrustRuntimeContext(value: unknown): TrustContext | undefined {
   if (
     trustClass !== "guardian" &&
     trustClass !== "trusted_contact" &&
+    trustClass !== "unverified_contact" &&
     trustClass !== "unknown"
   ) {
     return undefined;
