@@ -1,10 +1,16 @@
 // Browser interaction types.
-// CDP request/response messaging was removed — Playwright's connectOverCDP is broken
-// under Bun's runtime. Browser is now launched directly via Playwright.
+
+export interface BrowserScreencastFrame {
+  type: "browser_screencast_frame";
+  conversationId: string;
+  surfaceId: string;
+  data: string; // base64 JPEG
+  width: number;
+  height: number;
+}
 
 // --- Domain-level union aliases (consumed by the barrel file) ---
-// These must exist (even as `never`) so the barrel union compiles.
 
 export type _BrowserClientMessages = never;
 
-export type _BrowserServerMessages = never;
+export type _BrowserServerMessages = BrowserScreencastFrame;

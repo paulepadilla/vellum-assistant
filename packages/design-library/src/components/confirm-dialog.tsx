@@ -53,6 +53,7 @@ function ConfirmDialog({
       <Modal.Content
         size="sm"
         hideCloseButton
+        aria-describedby={undefined}
         onOpenAutoFocus={(event) => {
           const content = event.currentTarget as HTMLElement | null;
           const confirmButton = content?.querySelector<HTMLButtonElement>(

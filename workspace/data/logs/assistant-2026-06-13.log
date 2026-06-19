@@ -1,0 +1,6 @@
+[22:28:36.862] WARN (81106 on mac.lan): [gateway-ipc-client] Gateway IPC socket error
+    code: "ENOENT"
+    method: "get_feature_flags"
+    socketPath: "/Users/paulepadilla/Documents/repo/Vellum AI/workspace/gateway.sock"
+    err: "connect ENOENT /Users/paulepadilla/Documents/repo/Vellum AI/workspace/gateway.sock"
+[22:28:36.883] INFO (81106 on mac.lan): [config] Wrote default config to /Users/paulepadilla/Documents/repo/Vellum AI/workspace/config.json

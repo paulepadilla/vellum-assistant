@@ -9,9 +9,36 @@ metadata:
     category: "email"
     display-name: "Gmail"
     user-invocable: true
+    activation-hints:
+      - "Whenever the user asks about their Gmail, inbox, email messages, newest mail, senders, subjects, or unread mail"
+      - "When the user asks to read, list, search, draft, send, archive, label, trash, or organize Gmail messages"
+      - "For phrases such as 'my email', 'my newest emails', 'check my inbox', or 'show my unread mail'"
+    avoid-when:
+      - "Never use web search to read or manage the user's private Gmail data"
+      - "Do not use this skill for public web research"
 ---
 
-This skill provides Gmail-specific operations beyond the shared **messaging** skill. For cross-platform messaging (send, read, search, reply), use the messaging skill. Gmail operations depend on the messaging skill's provider infrastructure - load messaging first if Gmail is not yet connected.
+This skill reads and manages the user's connected Gmail account. For personal
+email requests, load this skill and use its CLI. Never use `web_search` or
+`web_fetch`; private Gmail data is not available on the public web.
+
+## Required Tool Usage
+
+The Gmail scripts are CLI commands, not assistant tool names.
+
+- Always execute them with the built-in `bash` tool.
+- Never use `gcloud` for Gmail. Authentication is already handled by
+  `assistant oauth request` inside the bundled Gmail scripts.
+- Never call a tool named `list`, `search`, `draft`, or `gmail-list`.
+- A Gmail query is optional when listing messages. Do not ask the user for a
+  query when they simply request their newest messages.
+- For "show my N newest emails", immediately call `bash` with:
+  `bun run skills/gmail/scripts/gmail-list.ts --max-results N`
+- Gmail list/search output is paginated. `returnedCount` is only the number of
+  rows in that page. When `hasMore` is true, never present per-sender counts
+  from those rows as exact totals and never use them to confirm a bulk action.
+  Use the reviewed sender-digest cache for sample-scoped actions, or run an
+  archive query with `--dry-run` to obtain an exact broader-action count.
 
 ## Script Reference
 
@@ -20,8 +47,9 @@ All operations use CLI scripts that return JSON:
 - **Success**: `{ "ok": true, "data": ... }`
 - **Failure**: `{ "ok": false, "error": "..." }`
 
-| Script             | Operation               | Description                                                                  |
-| ------------------ | ----------------------- | ---------------------------------------------------------------------------- |
+| Script             | CLI argument             | Description                                                                  |
+| ------------------ | ------------------------ | ---------------------------------------------------------------------------- |
+| `gmail-list.ts`    | `--max-results N`        | List newest messages with sender, subject, and date (read-only)              |
 | `gmail-email.ts`   | `draft`                 | Create email drafts in the Drafts folder (including reply drafts)            |
 | `gmail-email.ts`   | `send-draft`            | Send an existing draft (**requires explicit user confirmation**)             |
 | `gmail-email.ts`   | `forward`               | Create forward drafts, preserving attachments                                |
@@ -55,8 +83,14 @@ All operations use CLI scripts that return JSON:
 ### Email Operations
 
 ```bash
+# List the five newest messages (read-only)
+bun run skills/gmail/scripts/gmail-list.ts --max-results 5
+
+# List newest unread inbox messages (read-only)
+bun run skills/gmail/scripts/gmail-list.ts --max-results 5 --query "in:inbox is:unread"
+
 # Draft an email
-bun run scripts/gmail-email.ts draft --to "user@example.com" --subject "Hello" --body "Message body"
+bun run skills/gmail/scripts/gmail-email.ts draft --to "user@example.com" --subject "Hello" --body "Message body"
 
 # Draft a reply in a thread
 bun run scripts/gmail-email.ts draft --to "user@example.com" --subject "Re: Hello" --body "Reply body" --thread-id "18f..." --in-reply-to "18f..."
@@ -128,6 +162,12 @@ bun run scripts/gmail-archive.ts archive --message-id "18f..."
 # Archive by query
 bun run scripts/gmail-archive.ts archive --query "from:newsletter@example.com in:inbox"
 ```
+
+Never combine `--query` with `--skip-confirm`. Query-wide archives may match
+far more messages than a sender-digest sample. Use `--dry-run` first and show
+the exact count, or use the reviewed scan's `--cache-key` and
+`--sender-emails`. If the cache expires, scan again; never fall back to an
+unrestricted sender query.
 
 ### Operation Runs
 
@@ -291,13 +331,25 @@ When searching Gmail, the query uses Gmail's search operators:
 
 When a user asks to declutter, clean up, or organize their email - start scanning immediately. Don't ask what kind of cleanup they want or request permission to read their inbox. Go straight to scanning - but once results are ready, always present them and let the user choose actions before archiving or unsubscribing.
 
+The first command for a general or strategic cleanup is always:
+`bun run skills/gmail/scripts/gmail-scan.ts sender-digest --query "in:inbox" --max-messages 250 --max-senders 10`.
+Treat this as a representative first pass that is intentionally bounded so it
+returns within the interactive tool timeout. Present its recommendations, then
+offer deeper category-specific scans if the user wants broader coverage.
+Do not substitute `gcloud`, a web search, or an invented Gmail tool.
+
+The response must visibly list every returned sender with name/email, message
+count, unsubscribe availability, and sample subjects. Never describe table
+columns without rendering the sender rows. Never ask the user to approve a
+sender unless that sender is visibly listed in the response.
+
 **CRITICAL**: Never archive, unsubscribe, or take similar bulk actions unless the user has explicitly confirmed for that specific batch. Each batch of results requires its own explicit user confirmation. If the user says "keep going" or "keep decluttering," that means scan and present new results - NOT auto-archive. Previous batch approvals do not carry forward, but **deselections DO carry forward**: when the user deselects senders from a cleanup batch, run `bun run scripts/gmail-prefs.ts --action add-safelist` with those sender emails. Before building the next cleanup table, run `bun run scripts/gmail-prefs.ts --action list` and exclude safelisted senders from the table — the user already indicated they want to keep those.
 
 ### Inbox Recon (run before cleanup passes)
 
 Before starting category-specific cleanup, understand the inbox:
 
-1. **Broad scan**: Run `bun run scripts/gmail-scan.ts sender-digest --query "in:inbox"` with `--max-senders 75`. This surfaces the top senders across ALL categories — not just promotions.
+1. **Broad scan**: Run `bun run skills/gmail/scripts/gmail-scan.ts sender-digest --query "in:inbox" --max-messages 250 --max-senders 10`. This bounded first pass surfaces representative top senders across all categories without exhausting the interactive tool or output limits.
 2. **Identify cleanup buckets**: Group the results mentally:
    - Newsletters/promotions (`hasUnsubscribe: true`) → handle in promotions pass
    - Mailing lists / automated forwards (group addresses like `devops@`, `alerts@`, `noreply@`) → handle in general noise pass

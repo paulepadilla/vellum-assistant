@@ -126,7 +126,7 @@ export async function startOAuthAppConnect(
 ): Promise<{ authUrl: string; state?: string }> {
   const { data, error } = await oauthAppsByAppIdConnectPost({
     path: { assistant_id: assistantId, appId },
-    body: { callback_transport: "gateway", scopes: scopes ?? [] },
+    body: { callback_transport: "loopback", scopes: scopes ?? [] },
     throwOnError: false,
   });
   if (error || !data) {

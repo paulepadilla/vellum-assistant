@@ -59,6 +59,49 @@ import {
 import type { ToolSetupContext } from "./tool-setup-types.js";
 export type { ToolSetupContext } from "./tool-setup-types.js";
 
+const PREACTIVATED_GOOGLE_TOOLS = new Set([
+  "gmail_create_draft",
+  "gmail_search_messages",
+  "google_contacts_list",
+  "google_drive_list",
+]);
+
+export function normalizeSkillExecuteToolInput(
+  toolName: string,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!PREACTIVATED_GOOGLE_TOOLS.has(toolName) || !("activity" in input)) {
+    return input;
+  }
+
+  const normalized = { ...input };
+  delete normalized.activity;
+  return normalized;
+}
+
+export function normalizeGmailScanCommand(command: string): string {
+  if (
+    !/\bgmail-scan\.ts\b/.test(command) ||
+    /\bgmail-scan\.ts\s+(?:sender-digest|outreach-scan)\b/.test(command)
+  ) {
+    return command;
+  }
+
+  return command.replace(
+    /\bgmail-scan\.ts\b(?=\s+(?:--|$))/,
+    "gmail-scan.ts sender-digest",
+  );
+}
+
+export function isUnsafeGmailQueryArchiveCommand(command: string): boolean {
+  return (
+    /\bgmail-archive\.ts\s+archive\b/.test(command) &&
+    /\s--query(?:\s|=)/.test(command) &&
+    /\s--skip-confirm\b/.test(command) &&
+    !/\s--dry-run\b/.test(command)
+  );
+}
+
 // ── createToolExecutor ───────────────────────────────────────────────
 
 /**
@@ -90,11 +133,47 @@ export function createToolExecutor(
     onOutput?: (chunk: string) => void,
     toolUseId?: string,
   ) => {
-    const { name: executionName, input: executionInput } =
+    const { name: executionName, input: aliasedExecutionInput } =
       resolveToolInvocationAlias(name, input, ctx.allowedToolNames);
+    const executionInput =
+      executionName === "bash" || executionName === "host_bash"
+        ? {
+            ...aliasedExecutionInput,
+            command:
+              typeof aliasedExecutionInput.command === "string"
+                ? normalizeGmailScanCommand(aliasedExecutionInput.command)
+                : aliasedExecutionInput.command,
+          }
+        : aliasedExecutionInput;
 
     if (isDoordashCommand(executionName, executionInput)) {
       markDoordashStepInProgress(ctx, executionInput);
+    }
+
+    const shellCommand =
+      executionName === "bash" || executionName === "host_bash"
+        ? typeof executionInput.command === "string"
+          ? executionInput.command
+          : ""
+        : "";
+    if (
+      /\bgcloud\b/i.test(shellCommand) &&
+      /\b(?:gmail|gmail\.googleapis\.com|mail\.googleapis\.com)\b/i.test(
+        shellCommand,
+      )
+    ) {
+      return {
+        content:
+          'Do not use gcloud for Gmail. Use the connected-account Gmail skill scripts through bash. For inbox cleanup, run `bun run skills/gmail/scripts/gmail-scan.ts sender-digest --query "in:inbox" --max-messages 250 --max-senders 10`, then visibly list every returned sender before asking for approval or modifying anything.',
+        isError: true,
+      };
+    }
+    if (isUnsafeGmailQueryArchiveCommand(shellCommand)) {
+      return {
+        content:
+          "Refusing an unrestricted Gmail query archive with --skip-confirm. Inbox cleanup must archive only the message IDs captured in the reviewed sender-digest cache by using --cache-key with --sender-emails. If the cache is unavailable, scan again. For a broader query, run --dry-run first and show the exact count before requesting confirmation.",
+        isError: true,
+      };
     }
 
     // Build the context object shared by both the skill_execute interception
@@ -220,11 +299,15 @@ export function createToolExecutor(
         executionInput.input != null && typeof executionInput.input === "object"
           ? (executionInput.input as Record<string, unknown>)
           : {};
+      const normalizedToolInput = normalizeSkillExecuteToolInput(
+        rawToolName,
+        rawToolInput,
+      );
 
       // Clone to avoid mutating shared input objects
       const { name: toolName, input: toolInput } = resolveToolInvocationAlias(
         rawToolName,
-        { ...rawToolInput },
+        { ...normalizedToolInput },
         ctx.allowedToolNames,
       );
 
@@ -232,6 +315,29 @@ export function createToolExecutor(
         return {
           content:
             'Error: skill_execute requires a "tool" parameter with the tool name',
+          isError: true,
+        };
+      }
+
+      if (
+        /^google_calendar_/.test(toolName) &&
+        !ctx.allowedToolNames?.has(toolName)
+      ) {
+        return {
+          content:
+            'Google Calendar does not provide direct skill_execute tools. Immediately call skill_load with {"skill":"google-calendar","activity":"Loading Google Calendar"}, then follow the loaded instructions and use bash to run `bun skills/google-calendar/scripts/gcal.ts <subcommand>`. Do not ask the user to choose another method.',
+          isError: true,
+        };
+      }
+
+      if (
+        /^gmail_/.test(toolName) &&
+        !PREACTIVATED_GOOGLE_TOOLS.has(toolName) &&
+        !ctx.allowedToolNames?.has(toolName)
+      ) {
+        return {
+          content:
+            'This Gmail operation is provided by the Gmail CLI skill, not a direct skill_execute tool. Immediately call skill_load with {"skill":"gmail","activity":"Loading Gmail inbox management"}, then follow the loaded instructions and use bash to run the documented `bun run skills/gmail/scripts/...` command. For inbox cleanup, begin with the sender-digest scan and present results before archiving anything. Do not ask the user to choose another method.',
           isError: true,
         };
       }
@@ -287,7 +393,14 @@ export function createProxyApprovalCallback(
  * history or explicit preactivation. Without this, their tools are
  * unavailable in fresh conversations until `skill_load` is called.
  */
-const DEFAULT_PREACTIVATED_SKILL_IDS = ["tasks", "notifications", "subagent"];
+const DEFAULT_PREACTIVATED_SKILL_IDS = [
+  "tasks",
+  "notifications",
+  "subagent",
+  "gmail",
+  "google-drive",
+  "google-contacts",
+];
 
 /**
  * Subset of Conversation state that the resolveTools callback reads at each

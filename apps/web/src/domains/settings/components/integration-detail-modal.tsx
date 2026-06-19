@@ -31,7 +31,9 @@ import {
 import type { OAuthConnection } from "@/generated/api/types.gen";
 import { useOAuthCompleteDeepLinkListener } from "@/hooks/use-oauth-complete-deep-link-listener";
 import { openUrl, openUrlFinishedListener } from "@/runtime/browser";
-import { useIsNativePlatform } from "@/runtime/native-auth";
+import { startAuthFlow, useIsNativePlatform } from "@/runtime/native-auth";
+// eslint-disable-next-line local/no-cross-domain-imports
+import { PROVIDER_ID, buildProviderCallbackUrl } from "@/domains/account/login-flow";
 import type { OAuthCompleteDeepLinkPayload } from "@/runtime/native-deep-link";
 import { routes } from "@/utils/routes";
 import { Button } from "@vellumai/design-library/components/button";
@@ -560,11 +562,12 @@ export function IntegrationDetailModal({
         path: { assistant_id: assistantId, provider: providerKey },
         body: {
           requested_scopes: [],
-          redirect_after_connect: `${routes.account.oauth.popupComplete}?requestId=${requestId}`,
+          redirect_after_connect: `${window.location.origin}${routes.account.oauth.popupComplete}?requestId=${requestId}`,
         },
       },
       {
         onSuccess(data) {
+          console.log("OAuth Connect URL:", data.connect_url);
           if (popupRef.current && !popupRef.current.closed) {
             popupRef.current.location.href = data.connect_url;
           } else if (pendingRequestRef.current) {
@@ -682,7 +685,23 @@ export function IntegrationDetailModal({
 
           {activeTab === "managed" && platformGate !== "gated" ? (
             platformGate === "disabled" ? (
-              <Notice tone="info">
+              <Notice
+                tone="info"
+                actions={
+                  <Button
+                    variant="outlined"
+                    size="compact"
+                    onClick={() => {
+                      void startAuthFlow(
+                        PROVIDER_ID,
+                        buildProviderCallbackUrl(window.location.href),
+                      );
+                    }}
+                  >
+                    Log In
+                  </Button>
+                }
+              >
                 Log in to the Vellum platform to manage OAuth connections.
               </Notice>
             ) : (

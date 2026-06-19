@@ -98,6 +98,13 @@ describe("web_search tool", () => {
     return capturedTool.execute(input, context);
   }
 
+  test("description excludes private connected-account data", () => {
+    expect(capturedTool.description).toContain("private Calendar");
+    expect(capturedTool.description).toContain(
+      "load the relevant integration skill",
+    );
+  });
+
   // ---- Input validation ---------------------------------------------------
 
   test("rejects missing query", async () => {

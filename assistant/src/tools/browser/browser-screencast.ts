@@ -1,35 +1,13 @@
-import type { ServerMessage } from "../../daemon/message-protocol.js";
 import { browserManager } from "./browser-manager.js";
+import { getSender } from "./browser-screencast-registry.js";
+
+export {
+  registerConversationSender,
+  unregisterConversationSender,
+} from "./browser-screencast-registry.js";
 
 // Track which conversations have an active browser page.
 const activeBrowserConversations = new Set<string>();
-
-// Registry of sendToClient callbacks per conversation
-const conversationSenders = new Map<string, (msg: ServerMessage) => void>();
-
-/**
- * Register a sendToClient callback for a conversation.
- * Called from conversation-tool-setup when the conversation is created.
- */
-export function registerConversationSender(
-  conversationId: string,
-  sendToClient: (msg: ServerMessage) => void,
-): void {
-  conversationSenders.set(conversationId, sendToClient);
-}
-
-/**
- * Unregister the sendToClient callback for a conversation.
- */
-export function unregisterConversationSender(conversationId: string): void {
-  conversationSenders.delete(conversationId);
-}
-
-function getSender(
-  conversationId: string,
-): ((msg: ServerMessage) => void) | undefined {
-  return conversationSenders.get(conversationId);
-}
 
 export async function ensureScreencast(conversationId: string): Promise<void> {
   if (activeBrowserConversations.has(conversationId)) return;

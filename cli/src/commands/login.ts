@@ -214,9 +214,13 @@ export async function login(): Promise<void> {
       if (entry && entry.cloud !== "vellum") {
         const orgId = await fetchOrganizationId(token);
         const clientInstallationId = computeDeviceId();
+        const gatewayToken =
+          entry.bearerToken ||
+          loadGuardianToken(entry.assistantId)?.accessToken ||
+          undefined;
         const [assistantVersion, ingressUrl] = await Promise.all([
           fetchCurrentVersion(entry.runtimeUrl),
-          fetchAssistantIngressUrl(entry.runtimeUrl, entry.bearerToken),
+          fetchAssistantIngressUrl(entry.runtimeUrl, gatewayToken),
         ]);
         const registration = await ensureSelfHostedLocalRegistration(
           token,
@@ -244,7 +248,7 @@ export async function login(): Promise<void> {
           const cached = await readGatewayCredential(
             entry.runtimeUrl,
             "vellum:assistant_api_key",
-            entry.bearerToken,
+            gatewayToken,
           );
           if (cached.value) {
             assistantApiKey = cached.value;
@@ -265,7 +269,7 @@ export async function login(): Promise<void> {
         // mirroring the desktop app's LocalAssistantBootstrapService flow.
         const allInjected = await injectCredentialsIntoAssistant({
           gatewayUrl: entry.runtimeUrl,
-          bearerToken: entry.bearerToken,
+          bearerToken: gatewayToken,
           assistantApiKey,
           platformAssistantId: registration.assistant.id,
           platformBaseUrl: getPlatformUrl(),

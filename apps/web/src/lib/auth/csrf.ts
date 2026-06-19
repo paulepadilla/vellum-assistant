@@ -11,9 +11,7 @@
 import { getAllauthByClientV1AuthSession } from "@/generated/auth/sdk.gen";
 import { isGatewayAuthMode } from "@/lib/auth/gateway-session";
 
-const CSRF_COOKIE_NAME = import.meta.env.PROD
-  ? "__Secure-csrftoken"
-  : "csrftoken";
+
 
 /**
  * Read the CSRF token from the browser cookie jar.
@@ -29,25 +27,27 @@ export function getCsrfToken(): string | undefined {
   const bridgeToken = window.vellum?.csrf?.getToken();
   if (bridgeToken) return bridgeToken;
 
-  const match = document.cookie
-    .split("; ")
-    .findLast((row) => row.startsWith(`${CSRF_COOKIE_NAME}=`));
+  const cookieRows = document.cookie.split("; ");
+  const match = cookieRows.findLast((row) => row.startsWith("__Secure-csrftoken=")) ||
+                cookieRows.findLast((row) => row.startsWith("csrftoken="));
   return match?.split("=").slice(1).join("=");
 }
 
 function clearDuplicateCsrfCookies(): void {
-  const matches = document.cookie
-    .split("; ")
-    .filter((row) => row.startsWith(`${CSRF_COOKIE_NAME}=`));
-  if (matches.length > 1) {
-    document.cookie = `${CSRF_COOKIE_NAME}=; path=/; max-age=0; secure`;
+  for (const name of ["__Secure-csrftoken", "csrftoken"]) {
+    const matches = document.cookie
+      .split("; ")
+      .filter((row) => row.startsWith(`${name}=`));
+    if (matches.length > 1) {
+      document.cookie = `${name}=; path=/; max-age=0; secure`;
+    }
   }
 }
 
 let csrfBootstrap: Promise<void> | null = null;
 
-export async function ensureCsrfCookie(): Promise<void> {
-  if (isGatewayAuthMode()) return;
+export async function ensureCsrfCookie(force = false): Promise<void> {
+  if (isGatewayAuthMode() && !force) return;
 
   clearDuplicateCsrfCookies();
 

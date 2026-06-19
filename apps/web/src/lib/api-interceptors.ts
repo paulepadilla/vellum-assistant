@@ -34,7 +34,8 @@ import {
   getSelfHostedActorToken,
   getSelfHostedIngressUrl,
 } from "@/lib/self-hosted/connection";
-import { isLocalMode } from "@/lib/local-mode";
+import { isLocalMode, getSelectedAssistant, getLocalGatewayUrl } from "@/lib/local-mode";
+import { getGatewayToken } from "@/lib/auth/gateway-session";
 import { getClientRegistrationHeaders } from "@/lib/telemetry/client-identity";
 import { getActiveOrganizationIdForRequests } from "@/stores/organization-store";
 
@@ -91,6 +92,13 @@ export async function rewriteForSelfHostedIngress(
   const match = ASSISTANT_PATH_RE.exec(url.pathname);
   if (!match) return null;
   const firstSegment = match[1];
+  if (firstSegment === "oauth") {
+    const isProviders = url.pathname.includes("/oauth/providers");
+    if (!isProviders) {
+      return null;
+    }
+  }
+
   if (
     !firstSegment ||
     (!skipSegmentAllowlist &&
@@ -151,6 +159,39 @@ export async function rewriteForSelfHostedIngress(
   }
   return new Request(rewrittenUrl.toString(), init);
 }
+const platformAssistantUuidCache = new Map<string, string>();
+let isFetchingPlatformUuid = false;
+
+async function getPlatformAssistantUuid(localId: string): Promise<string | null> {
+  const cached = platformAssistantUuidCache.get(localId);
+  if (cached) return cached;
+
+  const localGateway = getLocalGatewayUrl();
+  const token = getSelfHostedActorToken() || getGatewayToken();
+  if (!localGateway || isFetchingPlatformUuid) return null;
+
+  isFetchingPlatformUuid = true;
+  try {
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    const gatewayUrl = `${window.location.origin}${localGateway}`;
+    const res = await fetch(`${gatewayUrl}/v1/auth/info`, { headers });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.assistantId) {
+        platformAssistantUuidCache.set(localId, data.assistantId);
+        return data.assistantId;
+      }
+    }
+  } catch (err) {
+    console.error("Failed to fetch platform assistant UUID:", err);
+  } finally {
+    isFetchingPlatformUuid = false;
+  }
+  return null;
+}
 
 /**
  * Builds a request interceptor for a HeyAPI client.
@@ -165,7 +206,7 @@ export async function rewriteForSelfHostedIngress(
  */
 function createInterceptor({ skipSegmentAllowlist = false } = {}) {
   return async (request: Request): Promise<Request> => {
-    const newRequest = new Request(request);
+    let newRequest = new Request(request);
 
     // Per-tab client identity — sent on *every* request (GET included)
     // so SSE-via-fetch readers and short-lived mutations carry the same
@@ -188,13 +229,39 @@ function createInterceptor({ skipSegmentAllowlist = false } = {}) {
     }
 
     // Platform path — Django session auth.
+    if (isLocalMode()) {
+      const selected = getSelectedAssistant();
+      const localId = selected?.assistantId;
+      if (localId && newRequest.url.includes(`/v1/assistants/${localId}`)) {
+        const platformUuid = await getPlatformAssistantUuid(localId);
+        if (platformUuid) {
+          const newUrl = newRequest.url.replace(
+            `/v1/assistants/${localId}`,
+            `/v1/assistants/${platformUuid}`,
+          );
+          newRequest = new Request(newUrl, newRequest);
+        }
+      }
+
+      const isAuthPath =
+        newRequest.url.includes("/_allauth/") ||
+        newRequest.url.includes("/accounts/");
+      if (!isAuthPath) {
+        const cookie = document.cookie;
+        const sessionMatch = /__Secure-sessionid=([^;]+)/.exec(cookie) || /sessionid=([^;]+)/.exec(cookie);
+        if (sessionMatch?.[1]) {
+          newRequest.headers.set("X-Session-Token", sessionMatch[1]);
+        }
+      }
+    }
+
     const organizationId = getActiveOrganizationIdForRequests();
     if (organizationId) {
       newRequest.headers.set("Vellum-Organization-Id", organizationId);
     }
 
     if (MUTATING_METHODS.has(request.method)) {
-      await ensureCsrfCookie();
+      await ensureCsrfCookie(true);
       const csrfToken = getCsrfToken();
       if (csrfToken) {
         newRequest.headers.set("X-CSRFToken", csrfToken);

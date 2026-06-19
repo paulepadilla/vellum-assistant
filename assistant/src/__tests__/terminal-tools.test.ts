@@ -95,7 +95,10 @@ describe("buildSanitizedEnv", () => {
 
     const env = buildSanitizedEnv();
     expect(env.HOME).toBe("/home/testuser");
-    expect(env.PATH).toBe("/usr/bin");
+    expect(env.PATH?.split(":")).toEqual([
+      "/usr/bin",
+      `${process.env.VELLUM_WORKSPACE_DIR}/bin`,
+    ]);
     expect(env.TERM).toBe("xterm-256color");
   });
 

@@ -168,7 +168,7 @@ async function startManagedOAuth(
   requestId: string,
   native: boolean,
 ): Promise<string> {
-  const redirectAfterConnect = `${routes.account.oauth.popupComplete}?requestId=${requestId}${native ? "&native=1" : ""}`;
+  const redirectAfterConnect = `${native ? "" : window.location.origin}${routes.account.oauth.popupComplete}?requestId=${requestId}${native ? "&native=1" : ""}`;
   const { data, error, response } = await assistantsOauthStartCreate({
     path: { assistant_id: assistantId, provider: providerKey },
     body: {
@@ -367,6 +367,7 @@ export async function connectManagedOAuthProvider({
           requestId,
           native,
         );
+        console.log("OAuth Connect URL:", connectUrl);
 
         if (native) {
           await openUrl(connectUrl);

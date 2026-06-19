@@ -253,8 +253,10 @@ export function OAuthPopupCompletePage() {
       }
     }
 
-    window.close();
-  }, [requestId, oauthStatus, oauthProvider, oauthCode, isNativeFlow]);
+    if (isSuccess) {
+      window.close();
+    }
+  }, [requestId, oauthStatus, oauthProvider, oauthCode, isNativeFlow, isSuccess]);
 
   return (
     <div className="oauth-page">

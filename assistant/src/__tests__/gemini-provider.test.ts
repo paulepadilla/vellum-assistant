@@ -492,6 +492,259 @@ describe("GeminiProvider", () => {
     });
   });
 
+  test("recovers a printed default_api tool call from Gemini Flash Lite", async () => {
+    fakeChunks = [
+      textChunk(
+        "tool_code\nprint(default_api.skill_execute(tool='google_drive_list', input={'max_results': 5, 'order_by': 'modifiedTime desc'}, activity='Listing Drive files'))\n",
+      ),
+      finishChunk("STOP", 10, 15),
+    ];
+    const events: ProviderEvent[] = [];
+    const tools: ToolDefinition[] = [
+      {
+        name: "skill_execute",
+        description: "Execute an active skill tool",
+        input_schema: { type: "object", properties: {} },
+      },
+    ];
+
+    const result = await provider.sendMessage(
+      [{ role: "user", content: [{ type: "text", text: "List Drive files" }] }],
+      { tools, onEvent: (event) => events.push(event) },
+    );
+
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0]).toMatchObject({
+      type: "tool_use",
+      name: "skill_execute",
+      input: {
+        tool: "google_drive_list",
+        input: { max_results: 5, order_by: "modifiedTime desc" },
+        activity: "Listing Drive files",
+      },
+    });
+    expect(events).toEqual([]);
+  });
+
+  test("recovers Gemini's printed Google Contacts namespace call", async () => {
+    fakeChunks = [
+      textChunk("tool_code\nprint(google_contacts.list(max_results=5))\n"),
+      finishChunk("STOP", 10, 15),
+    ];
+    const events: ProviderEvent[] = [];
+    const tools: ToolDefinition[] = [
+      {
+        name: "skill_execute",
+        description: "Execute an active skill tool",
+        input_schema: { type: "object", properties: {} },
+      },
+    ];
+
+    const result = await provider.sendMessage(
+      [
+        {
+          role: "user",
+          content: [{ type: "text", text: "List five contacts" }],
+        },
+      ],
+      { tools, onEvent: (event) => events.push(event) },
+    );
+
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0]).toMatchObject({
+      type: "tool_use",
+      name: "skill_execute",
+      input: {
+        tool: "google_contacts_list",
+        input: { max_results: 5 },
+        activity: "Listing Google contacts",
+      },
+    });
+    expect(events).toEqual([]);
+  });
+
+  test("recovers Gemini's assistant-wrapped skill_execute call", async () => {
+    fakeChunks = [
+      textChunk(
+        'tool_code\nprint(assistant.skill_execute(tool = "google_contacts_list", input = {"max_results": 5}))\n',
+      ),
+      finishChunk("STOP", 10, 15),
+    ];
+    const events: ProviderEvent[] = [];
+    const tools: ToolDefinition[] = [
+      {
+        name: "skill_execute",
+        description: "Execute an active skill tool",
+        input_schema: { type: "object", properties: {} },
+      },
+    ];
+
+    const result = await provider.sendMessage(
+      [
+        {
+          role: "user",
+          content: [{ type: "text", text: "List five contacts" }],
+        },
+      ],
+      { tools, onEvent: (event) => events.push(event) },
+    );
+
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0]).toMatchObject({
+      type: "tool_use",
+      name: "skill_execute",
+      input: {
+        tool: "google_contacts_list",
+        input: { max_results: 5 },
+      },
+    });
+    expect(events).toEqual([]);
+  });
+
+  test("suppresses code-like Gemini planning text before a native tool call", async () => {
+    fakeChunks = [
+      textChunk(
+        "The user wants unread email. I should use default_api.skill_execute. The tool call should be configured with the Gmail query.",
+      ),
+      functionCallChunk([
+        {
+          id: "call_gmail",
+          name: "skill_execute",
+          args: {
+            tool: "gmail_search_messages",
+            input: { query: "in:inbox is:unread", max_results: 5 },
+            activity: "Searching Gmail",
+          },
+        },
+      ]),
+      finishChunk("STOP", 10, 15),
+    ];
+    const events: ProviderEvent[] = [];
+    const tools: ToolDefinition[] = [
+      {
+        name: "skill_execute",
+        description: "Execute an active skill tool",
+        input_schema: { type: "object", properties: {} },
+      },
+    ];
+
+    const result = await provider.sendMessage(
+      [{ role: "user", content: [{ type: "text", text: "Check Gmail" }] }],
+      { tools, onEvent: (event) => events.push(event) },
+    );
+
+    expect(result.content).toEqual([
+      {
+        type: "tool_use",
+        id: "call_gmail",
+        name: "skill_execute",
+        input: {
+          tool: "gmail_search_messages",
+          input: { query: "in:inbox is:unread", max_results: 5 },
+          activity: "Searching Gmail",
+        },
+      },
+    ]);
+    expect(events).toEqual([]);
+  });
+
+  test("suppresses verbose Gemini planning before a Bash calendar tool call", async () => {
+    fakeChunks = [
+      textChunk(
+        [
+          "It's important to note that the google-calendar skill's documentation for delete states it requires user confirmation.",
+          "The user's request is very specific, but I need to first list the events to find the event_id.",
+          "Revised Plan:",
+          "1. Use scripts/gcal.ts list with --time-min and --time-max.",
+          "2. Extract the event_id from the response.",
+          "3. Then I will call scripts/gcal.ts delete with the found event_id.",
+          "Let's start by listing the events.",
+        ].join("\n\n"),
+      ),
+      functionCallChunk([
+        {
+          id: "call_calendar",
+          name: "bash",
+          args: {
+            command:
+              'bun skills/google-calendar/scripts/gcal.ts list --time-min "2026-06-11T10:00:00-07:00" --time-max "2026-06-11T10:15:00-07:00"',
+          },
+        },
+      ]),
+      finishChunk("STOP", 10, 120),
+    ];
+    const events: ProviderEvent[] = [];
+    const tools: ToolDefinition[] = [
+      {
+        name: "bash",
+        description: "Run a shell command",
+        input_schema: { type: "object", properties: {} },
+      },
+    ];
+
+    const result = await provider.sendMessage(
+      [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Delete the exact calendar event" }],
+        },
+      ],
+      { tools, onEvent: (event) => events.push(event) },
+    );
+
+    expect(result.content).toEqual([
+      {
+        type: "tool_use",
+        id: "call_calendar",
+        name: "bash",
+        input: {
+          command:
+            'bun skills/google-calendar/scripts/gcal.ts list --time-min "2026-06-11T10:00:00-07:00" --time-max "2026-06-11T10:15:00-07:00"',
+        },
+      },
+    ]);
+    expect(events).toEqual([]);
+  });
+
+  test("preserves a user-facing preamble before a native tool call", async () => {
+    fakeChunks = [
+      textChunk("I’ll check your inbox now."),
+      functionCallChunk([
+        {
+          id: "call_gmail",
+          name: "skill_execute",
+          args: {
+            tool: "gmail_search_messages",
+            input: { max_results: 5 },
+            activity: "Checking Gmail",
+          },
+        },
+      ]),
+      finishChunk("STOP", 10, 15),
+    ];
+    const events: ProviderEvent[] = [];
+    const tools: ToolDefinition[] = [
+      {
+        name: "skill_execute",
+        description: "Execute an active skill tool",
+        input_schema: { type: "object", properties: {} },
+      },
+    ];
+
+    const result = await provider.sendMessage(
+      [{ role: "user", content: [{ type: "text", text: "Check Gmail" }] }],
+      { tools, onEvent: (event) => events.push(event) },
+    );
+
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: "I’ll check your inbox now.",
+    });
+    expect(events).toEqual([
+      { type: "text_delta", text: "I’ll check your inbox now." },
+    ]);
+  });
+
   test("captures thought signature from streamed candidate function call parts", async () => {
     fakeChunks = [
       candidateFunctionCallChunk(

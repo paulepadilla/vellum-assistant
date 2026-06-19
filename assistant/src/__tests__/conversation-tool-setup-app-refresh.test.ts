@@ -66,7 +66,12 @@ mock.module("../memory/app-store.js", () => ({
 // Import createToolExecutor after mocks are in place
 // ---------------------------------------------------------------------------
 
-import { createToolExecutor } from "../daemon/conversation-tool-setup.js";
+import {
+  createToolExecutor,
+  isUnsafeGmailQueryArchiveCommand,
+  normalizeGmailScanCommand,
+  normalizeSkillExecuteToolInput,
+} from "../daemon/conversation-tool-setup.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -534,5 +539,193 @@ describe("session-tool-setup app refresh side effects", () => {
         expect(updatePublishedSpy).not.toHaveBeenCalled();
       }
     });
+  });
+});
+
+describe("skill_execute input normalization", () => {
+  test("adds the default Gmail scan subcommand when the model omits it", () => {
+    expect(
+      normalizeGmailScanCommand(
+        'bun run skills/gmail/scripts/gmail-scan.ts --query "in:inbox" --max-messages 250 --max-senders 30',
+      ),
+    ).toBe(
+      'bun run skills/gmail/scripts/gmail-scan.ts sender-digest --query "in:inbox" --max-messages 250 --max-senders 30',
+    );
+  });
+
+  test("preserves explicit Gmail scan subcommands", () => {
+    expect(
+      normalizeGmailScanCommand(
+        "bun run skills/gmail/scripts/gmail-scan.ts outreach-scan --time-range 90d",
+      ),
+    ).toBe(
+      "bun run skills/gmail/scripts/gmail-scan.ts outreach-scan --time-range 90d",
+    );
+  });
+
+  test("identifies unrestricted confirmed Gmail query archives", () => {
+    expect(
+      isUnsafeGmailQueryArchiveCommand(
+        'bun run skills/gmail/scripts/gmail-archive.ts archive --query "from:news@example.com in:inbox" --skip-confirm',
+      ),
+    ).toBe(true);
+    expect(
+      isUnsafeGmailQueryArchiveCommand(
+        'bun run skills/gmail/scripts/gmail-archive.ts archive --query "from:news@example.com in:inbox" --dry-run',
+      ),
+    ).toBe(false);
+  });
+
+  test("rejects unrestricted confirmed Gmail query archives", async () => {
+    const ctx = makeCtx();
+    const executor = makeFakeExecutor();
+    const toolFn = createToolExecutor(
+      executor as unknown as ToolExecutor,
+      noopPrompter,
+      noopSecretPrompter,
+      ctx,
+      noopLifecycleHandler,
+    );
+
+    const result = await toolFn("bash", {
+      command:
+        'bun run skills/gmail/scripts/gmail-archive.ts archive --query "from:news@example.com in:inbox" --skip-confirm',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("Refusing an unrestricted Gmail query");
+    expect(result.content).toContain("--cache-key");
+    expect(executor.execute).not.toHaveBeenCalled();
+  });
+
+  test("rejects invented gcloud Gmail commands", async () => {
+    const ctx = makeCtx();
+    const executor = makeFakeExecutor();
+    const toolFn = createToolExecutor(
+      executor as unknown as ToolExecutor,
+      noopPrompter,
+      noopSecretPrompter,
+      ctx,
+      noopLifecycleHandler,
+    );
+
+    const result = await toolFn("bash", {
+      command: "gcloud alpha gmail messages list",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("Do not use gcloud for Gmail");
+    expect(result.content).toContain("gmail-scan.ts sender-digest");
+    expect(executor.execute).not.toHaveBeenCalled();
+  });
+
+  test("redirects invented Google Calendar tools to the calendar skill", async () => {
+    const ctx = makeCtx({
+      allowedToolNames: new Set(["skill_execute", "skill_load", "bash"]),
+    });
+    const executor = makeFakeExecutor();
+    const toolFn = createToolExecutor(
+      executor as unknown as ToolExecutor,
+      noopPrompter,
+      noopSecretPrompter,
+      ctx,
+      noopLifecycleHandler,
+    );
+
+    const result = await toolFn("skill_execute", {
+      tool: "google_calendar_create_event",
+      input: {
+        summary: "Example event",
+        start: "2026-06-12T14:00:00-07:00",
+        end: "2026-06-12T14:15:00-07:00",
+      },
+      activity: "Creating a calendar event",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(
+      'skill_load with {"skill":"google-calendar"',
+    );
+    expect(result.content).toContain(
+      "bun skills/google-calendar/scripts/gcal.ts",
+    );
+    expect(executor.execute).not.toHaveBeenCalled();
+  });
+
+  test("redirects invented Gmail cleanup tools to the Gmail CLI skill", async () => {
+    const ctx = makeCtx({
+      allowedToolNames: new Set(["skill_execute", "skill_load", "bash"]),
+    });
+    const executor = makeFakeExecutor();
+    const toolFn = createToolExecutor(
+      executor as unknown as ToolExecutor,
+      noopPrompter,
+      noopSecretPrompter,
+      ctx,
+      noopLifecycleHandler,
+    );
+
+    const result = await toolFn("skill_execute", {
+      tool: "gmail_scan_sender_digest",
+      input: {},
+      activity: "Scanning Gmail senders",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain('skill_load with {"skill":"gmail"');
+    expect(result.content).toContain("sender-digest scan");
+    expect(result.content).toContain("present results before archiving");
+    expect(executor.execute).not.toHaveBeenCalled();
+  });
+
+  test("removes duplicated activity metadata from Google Contacts input", () => {
+    const input = {
+      max_results: 5,
+      activity: "Listing Google contacts",
+    };
+
+    expect(
+      normalizeSkillExecuteToolInput("google_contacts_list", input),
+    ).toEqual({
+      max_results: 5,
+    });
+    expect(input).toEqual({
+      max_results: 5,
+      activity: "Listing Google contacts",
+    });
+  });
+
+  test("removes duplicated activity metadata from Gmail search input", () => {
+    expect(
+      normalizeSkillExecuteToolInput("gmail_search_messages", {
+        max_results: 5,
+        query: "in:inbox is:unread",
+        activity: "Searching unread Gmail messages",
+      }),
+    ).toEqual({
+      max_results: 5,
+      query: "in:inbox is:unread",
+    });
+  });
+
+  test("removes duplicated activity metadata from Gmail draft input", () => {
+    expect(
+      normalizeSkillExecuteToolInput("gmail_create_draft", {
+        to: "self",
+        subject: "Example",
+        body: "Example body",
+        activity: "Creating a Gmail draft",
+      }),
+    ).toEqual({
+      to: "self",
+      subject: "Example",
+      body: "Example body",
+    });
+  });
+
+  test("does not alter inputs for other skill tools", () => {
+    const input = { activity: "A tool-specific value" };
+
+    expect(normalizeSkillExecuteToolInput("custom_tool", input)).toBe(input);
   });
 });

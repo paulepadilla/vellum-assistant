@@ -289,7 +289,7 @@ async function archiveByQuery(
   }
 }
 
-/** Path 2: --cache-key + --sender-emails — retrieve from cache, fall back to per-sender query. */
+/** Path 2: --cache-key + --sender-emails — archive only reviewed scan results. */
 async function archiveByCacheKey(
   cacheKey: string,
   senderEmails: string[],
@@ -333,34 +333,30 @@ async function archiveByCacheKey(
       cachedData = parsed.data as Record<string, string[]>;
     }
   } catch {
-    // Cache miss — will fall back to per-sender query
+    cachedData = null;
   }
 
   const allMessageIds: string[] = [];
 
-  if (cachedData !== null) {
-    // Look up message IDs for each sender email from the cached data
-    for (const email of senderEmails) {
-      const ids = cachedData[email];
-      if (Array.isArray(ids)) {
-        allMessageIds.push(...ids);
-      }
-    }
+  if (cachedData === null) {
+    printError(
+      "The reviewed sender-digest cache is unavailable or expired. Run the sender-digest scan again before archiving.",
+    );
+    return;
   }
 
-  if (cachedData === null || allMessageIds.length === 0) {
-    // Fall back to per-sender query-based archiving
-    for (const email of senderEmails) {
-      const sanitized = email.replace(/"/g, "");
-      const query = `from:"${sanitized}" in:inbox`;
-      const ids = await collectMessageIds(query, account, { runId: rid });
+  // Look up message IDs for each sender email from the reviewed scan data.
+  for (const email of senderEmails) {
+    const ids = cachedData[email];
+    if (Array.isArray(ids)) {
       allMessageIds.push(...ids);
-      if (allMessageIds.length >= MAX_MESSAGES) break;
     }
   }
 
   if (allMessageIds.length === 0) {
-    ok({ archived: 0, method: "cache", note: "No messages found" });
+    printError(
+      "None of the selected senders were present in the reviewed sender-digest cache. Run the scan again before archiving.",
+    );
     return;
   }
 
@@ -567,6 +563,12 @@ async function main(): Promise<void> {
 
   // Priority: --query > --cache-key > --message-ids > --message-id
   if (query) {
+    if (skipConfirm && !dryRun) {
+      printError(
+        "Query-wide archives cannot use --skip-confirm. Run with --dry-run first, or use --cache-key with --sender-emails from a reviewed sender-digest scan.",
+      );
+      return;
+    }
     await archiveByQuery(query, account, skipConfirm, runId, phase, dryRun);
   } else if (cacheKey && senderEmailsRaw) {
     const senderEmails = parseCsv(senderEmailsRaw);

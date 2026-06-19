@@ -87,6 +87,7 @@ import {
   seedV2SkillEntries,
 } from "../memory/v2/skill-store.js";
 import { executeDeleteManagedSkill } from "../tools/skills/delete-managed.js";
+import { skillExecuteTool } from "../tools/skills/execute.js";
 import { skillLoadTool } from "../tools/skills/load.js";
 import { executeScaffoldManagedSkill } from "../tools/skills/scaffold-managed.js";
 import type { ToolContext } from "../tools/types.js";
@@ -104,6 +105,46 @@ beforeEach(() => {
   mkdirSync(join(TEST_DIR, "skills"), { recursive: true });
   seedUpsertSlugs.length = 0;
   _resetSkillStoreForTests();
+});
+
+test("skill_load routes on-demand integrations and identifies preactivated integrations", () => {
+  expect(skillLoadTool.description).toContain("Google Calendar");
+  expect(skillLoadTool.description).toContain("`google-calendar`");
+  expect(skillLoadTool.description).toContain(
+    "there are no direct `google_calendar_*` skill_execute tools",
+  );
+  expect(skillLoadTool.description).toContain("Gmail");
+  expect(skillLoadTool.description).toContain("`gmail`");
+  expect(skillLoadTool.description).toContain("strategic inbox cleanup");
+  expect(skillLoadTool.description).toContain("`gmail_scan_sender_digest`");
+  expect(skillLoadTool.description).toContain("Google Drive");
+  expect(skillLoadTool.description).toContain("Google Contacts");
+  expect(skillLoadTool.description).toContain("already active");
+  expect(skillLoadTool.description).toContain("without loading");
+});
+
+test("skill_execute documents the preactivated Google Drive tool", () => {
+  expect(skillExecuteTool.description).toContain("`gmail_search_messages`");
+  expect(skillExecuteTool.description).toContain("`gmail_create_draft`");
+  expect(skillExecuteTool.description).toContain("`gmail_scan_sender_digest`");
+  expect(skillExecuteTool.description).toContain(
+    "first call `skill_load` with skill `gmail`",
+  );
+  expect(skillExecuteTool.description).toContain("`google_drive_list`");
+  expect(skillExecuteTool.description).toContain("`google_contacts_list`");
+  expect(skillExecuteTool.description).toContain(
+    "`google_calendar_create_event`",
+  );
+  expect(skillExecuteTool.description).toContain(
+    "first call `skill_load` with skill `google-calendar`",
+  );
+  expect(skillExecuteTool.description).toContain("do not require skill_load");
+  expect(skillExecuteTool.description).toContain(
+    "already include sender, subject, and date",
+  );
+  expect(skillExecuteTool.description).toContain(
+    "Draft creation never sends the email",
+  );
 });
 
 describe("managed skill lifecycle: scaffold → catalog → prompt → delete", () => {

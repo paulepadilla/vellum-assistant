@@ -29,6 +29,7 @@ export async function startHandoff(
     try {
       const page = await browserManager.getOrCreateSessionPage(conversationId);
       await page.bringToFront();
+      await browserManager.moveWindowOnscreen();
     } catch (err) {
       log.warn({ err, conversationId }, "Failed to bring browser to front");
     }
@@ -43,6 +44,9 @@ export async function startHandoff(
 
   // Wait for user to hand back control (5 min timeout, or auto-detect URL change)
   await browserManager.waitForHandoffComplete(conversationId);
+
+  // Position the window back on the side so automation visibility resumes
+  await browserManager.positionWindowSidebar();
 
   log.info({ conversationId }, "Handoff complete, agent resuming");
 }

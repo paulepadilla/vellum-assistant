@@ -128,7 +128,7 @@ export const skillLoadTool = {
   name: "skill_load",
 
   description:
-    'Load full instructions for a skill. Works for both bundled skills (listed in the catalog) and custom workspace skills. For app, website, dashboard, game, calculator, tracker, visualization, or interactive tool requests, load `app-builder` with `skill: "app-builder"`.',
+    'Load full instructions for a skill. Works for both bundled skills (listed in the catalog) and custom workspace skills. For every request involving the user\'s Google Calendar events, schedule, availability, creation, or deletion, load `google-calendar` before acting and follow its bash script instructions; there are no direct `google_calendar_*` skill_execute tools. Gmail read-only search and unsent draft creation are already active through `gmail_search_messages` and `gmail_create_draft`. For strategic inbox cleanup, decluttering, archiving, labels, filters, sending, or unsubscribing, load `gmail` immediately and follow its CLI workflow; invented tools such as `gmail_scan_sender_digest` do not exist. Google Drive and Google Contacts tools are already active through `skill_execute` and can be used without loading their skills. For app, website, dashboard, game, calculator, tracker, visualization, or interactive tool requests, load `app-builder` with `skill: "app-builder"`.',
 
   category: "skills",
 
@@ -467,6 +467,20 @@ export const skillLoadTool = {
     }
 
     const versionAttr = versionHash ? ` version="${versionHash}"` : "";
+    const activity = typeof input.activity === "string" ? input.activity : "";
+    const immediateAction =
+      skill.id === "gmail" &&
+      /\b(?:cleanup|clean up|declutter|organize|inbox management)\b/i.test(
+        activity,
+      )
+        ? [
+            "## Immediate Next Action",
+            "",
+            "This is an inbox-cleanup request. Do not ask the user to choose a category and do not use `gcloud`.",
+            'Immediately use `bash` to run: `bun run skills/gmail/scripts/gmail-scan.ts sender-digest --query "in:inbox" --max-messages 250 --max-senders 10`.',
+            "Present all returned senders as actual rows containing sender name/email, message count, unsubscribe availability, and sample subjects. Never describe a table without rendering its rows, and do not ask the user to approve senders that are not visibly listed. Explain that this is a representative first pass, then offer deeper category-specific scans. Do not archive, unsubscribe, trash, or delete anything until the user confirms a specific batch.",
+          ].join("\n")
+        : undefined;
 
     // Emit markers for included skills so their tools get projected
     const includeMarkers: string[] = [];
@@ -507,6 +521,7 @@ export const skillLoadTool = {
         "",
         ...(referenceListing ? [referenceListing, ""] : []),
         ...(toolSchemasSection ? [toolSchemasSection, ""] : []),
+        ...(immediateAction ? [immediateAction, ""] : []),
         ...(!toolSchemasSection && anyChildHasTools
           ? [
               "## Available Tools",

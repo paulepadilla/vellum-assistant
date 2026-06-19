@@ -202,7 +202,9 @@ export function completeOAuthPopup(
     }
   }
 
-  target.close();
+  if (payload.oauthStatus === "connected") {
+    target.close();
+  }
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────

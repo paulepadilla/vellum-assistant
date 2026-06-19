@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "google_oauth_setup_start",
+      "description": "Start the automated Google OAuth setup process using browser automation. This will open a browser window and guide the user through creating a Google Cloud project and obtaining OAuth credentials.",
+      "category": "settings",
+      "risk": "medium",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "executor": "tools/google-oauth-setup-start.ts",
+      "execution_target": "host"
+    }
+  ]
+}

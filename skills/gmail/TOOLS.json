@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "gmail_search_messages",
+      "description": "List or search a limited page of the user's Gmail messages. This is read-only and returns sender, subject, date, message ID, and thread ID. `max_results` limits returned rows and must never be treated as an exact match count. When `hasMore` is true, do not count returned messages by sender or use them as bulk-action totals. For exact cleanup counts, load the Gmail skill and use a reviewed sender-digest cache or a query dry run. For unread inbox mail, use query `in:inbox is:unread`.",
+      "category": "productivity",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Maximum number of messages to return. Defaults to 5."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional Gmail search query, such as `in:inbox is:unread`."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional compatibility hint. Results always include sender, subject, date, message ID, and thread ID."
+          },
+          "account": {
+            "type": "string",
+            "description": "Optional connected Google account email."
+          }
+        }
+      },
+      "executor": "scripts/gmail-list.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "gmail_create_draft",
+      "description": "Create a Gmail draft for review without sending it. If `to` is omitted or is `self`, `me`, or `myself`, the recipient defaults to the connected Gmail account.",
+      "category": "productivity",
+      "risk": "medium",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "string",
+            "description": "Recipient email address. Omit or use `self` to draft to the connected Gmail account."
+          },
+          "subject": {
+            "type": "string",
+            "description": "Draft subject."
+          },
+          "body": {
+            "type": "string",
+            "description": "Plain-text draft body."
+          },
+          "account": {
+            "type": "string",
+            "description": "Optional connected Google account email."
+          }
+        },
+        "required": [
+          "subject",
+          "body"
+        ]
+      },
+      "executor": "scripts/gmail-create-draft.ts",
+      "execution_target": "host"
+    }
+  ]
+}

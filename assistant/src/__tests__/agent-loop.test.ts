@@ -1787,6 +1787,9 @@ describe("AgentLoop", () => {
 
     // Provider should be called 3 times: initial, empty response, retry
     expect(calls).toHaveLength(3);
+    expect(calls[0].tools).toEqual(dummyTools);
+    expect(calls[1].tools).toEqual(dummyTools);
+    expect(calls[2].tools).toBeUndefined();
 
     // The retry call should include the nudge message
     const retryMessages = calls[2].messages;
@@ -1815,6 +1818,59 @@ describe("AgentLoop", () => {
       (e) => e.type === "message_complete",
     );
     expect(messageCompletes).toHaveLength(2);
+  });
+
+  test("keeps tools available when retrying after an empty skill_load turn", async () => {
+    const emptyResponse: ProviderResponse = {
+      content: [],
+      model: "mock-model",
+      usage: { inputTokens: 10, outputTokens: 0 },
+      stopReason: "end_turn",
+    };
+    const tools: ToolDefinition[] = [
+      ...dummyTools,
+      {
+        name: "skill_load",
+        description: "Load a skill",
+        input_schema: {
+          type: "object",
+          properties: { skill: { type: "string" } },
+        },
+      },
+    ];
+    const { provider, calls } = createMockProvider([
+      toolUseResponse("load-1", "skill_load", {
+        skill: "google-contacts",
+      }),
+      emptyResponse,
+      toolUseResponse("contacts-1", "read_file", {
+        path: "/contacts.json",
+      }),
+      textResponse("Here are five contacts."),
+    ]);
+    const loop = new AgentLoop(provider, "system", {
+      conversationId: "test-conversation",
+      tools,
+      toolExecutor: async (name) => ({
+        content: name === "skill_load" ? "skill loaded" : "contact results",
+        isError: false,
+      }),
+    });
+
+    await loop.run([userMessage], collectEvents([]), {
+      trust: { sourceChannel: "vellum", trustClass: "unknown" },
+    });
+
+    expect(calls).toHaveLength(4);
+    expect(calls[2].tools).toEqual(tools);
+    const retryMessage = calls[2].messages.at(-1);
+    expect(retryMessage?.role).toBe("user");
+    expect(retryMessage?.content).toEqual([
+      {
+        type: "text",
+        text: expect.stringContaining("newly available skill tool"),
+      },
+    ]);
   });
 
   // Regression: when the model emits [text, tool_use] in a single turn and then

@@ -35,10 +35,38 @@ function forwardSessionCookie(proxy: { on: (event: string, cb: (...args: unknown
   proxy.on("proxyReq", (...args: unknown[]) => {
     const proxyReq = args[0] as http.ClientRequest;
     const req = args[1] as http.IncomingMessage;
+
+    if (req.headers["x-session-token"]) {
+      proxyReq.setHeader("Cookie", "");
+      proxyReq.removeHeader("Origin");
+      proxyReq.removeHeader("Referer");
+      console.log("[Proxy] Bypassed session cookies forwarding and removed Origin/Referer headers due to X-Session-Token header");
+      return;
+    }
+
     const cookie = req.headers.cookie ?? "";
-    const match = /sessionid=([^;]+)/.exec(cookie);
-    if (match?.[1]) {
-      proxyReq.setHeader("Cookie", `sessionid=${match[1]}; __Secure-sessionid=${match[1]}`);
+    console.log("[Proxy] Incoming URL:", req.url);
+    console.log("[Proxy] Incoming Cookies:", cookie);
+    console.log("[Proxy] Incoming X-CSRFToken Header:", req.headers["x-csrftoken"]);
+
+    const cookiesList: string[] = [];
+    
+    const sessionMatch = /__Secure-sessionid=([^;]+)/.exec(cookie) || /sessionid=([^;]+)/.exec(cookie);
+    if (sessionMatch?.[1]) {
+      cookiesList.push(`sessionid=${sessionMatch[1]}`);
+      cookiesList.push(`__Secure-sessionid=${sessionMatch[1]}`);
+    }
+
+    const csrfMatch = /__Secure-csrftoken=([^;]+)/.exec(cookie) || /csrftoken=([^;]+)/.exec(cookie);
+    if (csrfMatch?.[1]) {
+      cookiesList.push(`csrftoken=${csrfMatch[1]}`);
+      cookiesList.push(`__Secure-csrftoken=${csrfMatch[1]}`);
+    }
+
+    if (cookiesList.length > 0) {
+      const formattedCookie = cookiesList.join("; ");
+      proxyReq.setHeader("Cookie", formattedCookie);
+      console.log("[Proxy] Forwarded Cookie Header:", formattedCookie);
     }
   });
 }

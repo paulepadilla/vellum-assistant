@@ -4,11 +4,16 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { getLogger } from "../../util/logger.js";
 import { getDataDir } from "../../util/platform.js";
 import { authSessionCache } from "./auth-cache.js";
+import { getSender } from "./browser-screencast-registry.js";
 import type { CdpClientKind } from "./cdp-client/types.js";
 import type { ExtractedCredential } from "./network-recording-types.js";
 import { importPlaywright } from "./runtime-check.js";
 
 const log = getLogger("browser-manager");
+
+const SCREENCAST_WIDTH = 1280;
+const SCREENCAST_HEIGHT = 800;
+const SCREENCAST_QUALITY = 45;
 
 /**
  * Well-known paths where Google Chrome is installed on each platform.
@@ -427,6 +432,44 @@ class BrowserManager {
       }
     }
 
+    // Create a dedicated CDP session for screencasting if we have a sender.
+    const sender = getSender(conversationId);
+    if (sender) {
+      try {
+        const rawPage = page as unknown as RawPlaywrightPage;
+        const cdp = await rawPage.context().newCDPSession(rawPage);
+        this.cdpSessions.set(conversationId, cdp);
+
+        cdp.on("Page.screencastFrame", (params) => {
+          const { data, metadata, sessionId } = params as {
+            data: string;
+            metadata: { deviceWidth: number; deviceHeight: number };
+            sessionId: number;
+          };
+          sender({
+            type: "browser_screencast_frame",
+            conversationId,
+            surfaceId: `browser:${conversationId}`,
+            data,
+            width: metadata.deviceWidth,
+            height: metadata.deviceHeight,
+          });
+          cdp.send("Page.screencastFrameAck", { sessionId }).catch(() => {});
+        });
+
+        await cdp.send("Page.startScreencast", {
+          format: "jpeg",
+          quality: SCREENCAST_QUALITY,
+          maxWidth: SCREENCAST_WIDTH,
+          maxHeight: SCREENCAST_HEIGHT,
+          everyNthFrame: 1,
+        });
+        log.debug({ conversationId }, "Started browser screencast via CDP");
+      } catch (err) {
+        log.warn({ err, conversationId }, "Failed to start browser screencast");
+      }
+    }
+
     // Position the browser window so the user can watch.
     if (
       this.browserCdpSession &&
@@ -652,10 +695,10 @@ class BrowserManager {
       await this.browserCdpSession.send("Browser.setWindowBounds", {
         windowId,
         bounds: {
-          left: 480,
-          top: 40,
-          width: 940,
-          height: 700,
+          left: 740,
+          top: 60,
+          width: 680,
+          height: 520,
           windowState: "normal",
         },
       });
@@ -679,10 +722,10 @@ class BrowserManager {
       await this.browserCdpSession.send("Browser.setWindowBounds", {
         windowId,
         bounds: {
-          left: 200,
-          top: 40,
-          width: 1100,
-          height: 820,
+          left: 100,
+          top: 100,
+          width: 1280,
+          height: 960,
           windowState: "normal",
         },
       });

@@ -367,6 +367,27 @@ export async function patchEvent(
 }
 
 /**
+ * Delete an existing event.
+ * Wraps DELETE /calendars/{calendarId}/events/{eventId}.
+ */
+export async function deleteEvent(
+  eventId: string,
+  calendarId: string = "primary",
+  sendUpdates?: "all" | "externalOnly" | "none",
+  account?: string,
+): Promise<GcalResponse<void>> {
+  const query: Record<string, string> = {};
+  if (sendUpdates) query.sendUpdates = sendUpdates;
+
+  return gcalRequest<void>({
+    method: "DELETE",
+    path: `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    query: Object.keys(query).length > 0 ? query : undefined,
+    account,
+  });
+}
+
+/**
  * Query free/busy information.
  * Wraps POST /freeBusy.
  */

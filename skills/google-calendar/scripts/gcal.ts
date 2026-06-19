@@ -2,7 +2,7 @@
 
 /**
  * Google Calendar CLI script.
- * Subcommands: list, get, create, availability, rsvp
+ * Subcommands: list, get, create, delete, end-series, availability, rsvp
  */
 
 import {
@@ -17,6 +17,7 @@ import {
   listEvents,
   getEvent,
   createEvent,
+  deleteEvent,
   patchEvent,
   freeBusy,
   type CalendarEvent,
@@ -76,7 +77,7 @@ async function list(argv: string[]): Promise<void> {
   );
   const query = optionalArg(args, "query");
   const singleEvents = optionalArg(args, "single-events") !== "false";
-  const orderBy = optionalArg(args, "order-by");
+  const orderBy = optionalArg(args, "order-by") ?? "startTime";
   const account = optionalArg(args, "account");
 
   const response = await listEvents(calendarId, {
@@ -194,6 +195,212 @@ async function create(argv: string[]): Promise<void> {
   const event = response.data;
   const link = event.htmlLink ? ` View it here: ${event.htmlLink}` : "";
   ok(`Event created (ID: ${event.id}).${link}`);
+}
+
+// ---------------------------------------------------------------------------
+// delete
+// ---------------------------------------------------------------------------
+
+async function remove(argv: string[]): Promise<void> {
+  const args = parseArgs(argv);
+  const eventIds = argv.flatMap((arg, index) => {
+    if (arg !== "--event-id") return [];
+    const value = argv[index + 1];
+    return value && !value.startsWith("--") ? parseCsv(value) : [];
+  });
+  if (eventIds.length === 0) {
+    requireArg(args, "event-id");
+  }
+  const calendarId = optionalArg(args, "calendar-id") ?? "primary";
+  const account = optionalArg(args, "account");
+  const sendUpdates =
+    (optionalArg(args, "send-updates") as
+      | "all"
+      | "externalOnly"
+      | "none"
+      | undefined) ?? "all";
+  const skipConfirm = args["skip-confirm"] === true;
+
+  if (!["all", "externalOnly", "none"].includes(sendUpdates)) {
+    printError(
+      `Invalid --send-updates value: "${sendUpdates}". Must be all, externalOnly, or none.`,
+    );
+    return;
+  }
+
+  const events: CalendarEvent[] = [];
+  for (const eventId of eventIds) {
+    const eventResponse = await getEvent(eventId, calendarId, account);
+    if (!eventResponse.ok) {
+      printError(
+        `Failed to get event ${eventId} before deletion: status ${eventResponse.status}`,
+      );
+      return;
+    }
+    events.push(eventResponse.data);
+  }
+
+  if (!skipConfirm) {
+    const eventLines = events.map((event, index) => {
+      const start = event.start?.dateTime ?? event.start?.date ?? "Unknown";
+      return `${index + 1}. ${event.summary ?? eventIds[index]} — ${start}`;
+    });
+    const recurringCount = events.filter(
+      (event) => event.recurringEventId,
+    ).length;
+    const confirmed = await requestConfirmation({
+      title:
+        events.length === 1
+          ? "Delete calendar event"
+          : `Delete ${events.length} calendar events`,
+      message: [
+        ...eventLines,
+        recurringCount > 0
+          ? `${recurringCount} recurring occurrence(s) will be removed without deleting their entire series.`
+          : "",
+        "This action cannot be undone from Vellum.",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      confirmLabel: "Delete",
+    });
+
+    if (!confirmed) {
+      ok({ deleted: false, reason: "User did not confirm" });
+      return;
+    }
+  }
+
+  const deleted = [];
+  for (let index = 0; index < eventIds.length; index++) {
+    const eventId = eventIds[index];
+    const response = await deleteEvent(
+      eventId,
+      calendarId,
+      sendUpdates,
+      account,
+    );
+    if (!response.ok) {
+      printError(
+        `Deleted ${deleted.length} of ${eventIds.length} events, then failed to delete ${eventId}: status ${response.status}`,
+      );
+      return;
+    }
+    const event = events[index];
+    deleted.push({
+      eventId,
+      summary: event.summary ?? null,
+      recurringEventId: event.recurringEventId ?? null,
+    });
+  }
+
+  ok({
+    deleted: true,
+    deletedCount: deleted.length,
+    events: deleted,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// end-series
+// ---------------------------------------------------------------------------
+
+function formatRecurrenceUntil(date: Date): string {
+  return date
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}Z$/, "Z");
+}
+
+async function endSeries(argv: string[]): Promise<void> {
+  const args = parseArgs(argv);
+  const eventId = requireArg(args, "event-id");
+  const cutoffRaw = requireArg(args, "cutoff");
+  const calendarId = optionalArg(args, "calendar-id") ?? "primary";
+  const account = optionalArg(args, "account");
+  const sendUpdates =
+    (optionalArg(args, "send-updates") as
+      | "all"
+      | "externalOnly"
+      | "none"
+      | undefined) ?? "all";
+  const skipConfirm = args["skip-confirm"] === true;
+
+  if (!["all", "externalOnly", "none"].includes(sendUpdates)) {
+    printError(
+      `Invalid --send-updates value: "${sendUpdates}". Must be all, externalOnly, or none.`,
+    );
+    return;
+  }
+
+  const cutoff = new Date(cutoffRaw);
+  if (Number.isNaN(cutoff.getTime())) {
+    printError(`Invalid --cutoff date: "${cutoffRaw}". Use an ISO 8601 value.`);
+    return;
+  }
+
+  const eventResponse = await getEvent(eventId, calendarId, account);
+  if (!eventResponse.ok) {
+    printError(
+      `Failed to get recurring event ${eventId}: status ${eventResponse.status}`,
+    );
+    return;
+  }
+
+  const event = eventResponse.data;
+  if (!event.recurrence?.some((rule) => rule.startsWith("RRULE:"))) {
+    printError(`Event ${eventId} is not a recurring series.`);
+    return;
+  }
+
+  const until = formatRecurrenceUntil(new Date(cutoff.getTime() - 1000));
+  const recurrence = event.recurrence.map((rule) => {
+    if (!rule.startsWith("RRULE:")) return rule;
+    const parts = rule
+      .split(";")
+      .filter(
+        (part) => !part.startsWith("UNTIL=") && !part.startsWith("COUNT="),
+      );
+    return `${parts.join(";")};UNTIL=${until}`;
+  });
+
+  if (!skipConfirm) {
+    const confirmed = await requestConfirmation({
+      title: "End recurring calendar series",
+      message: [
+        `Series: ${event.summary ?? eventId}`,
+        `Remove occurrences starting: ${cutoff.toISOString()}`,
+        "Past occurrences will remain on the calendar.",
+        "All later generated occurrences in this recurring series will be removed.",
+      ].join("\n"),
+      confirmLabel: "End series",
+    });
+
+    if (!confirmed) {
+      ok({ ended: false, reason: "User did not confirm" });
+      return;
+    }
+  }
+
+  const response = await patchEvent(
+    eventId,
+    { recurrence },
+    calendarId,
+    sendUpdates,
+    account,
+  );
+  if (!response.ok) {
+    printError(`Failed to end recurring series: status ${response.status}`);
+    return;
+  }
+
+  ok({
+    ended: true,
+    eventId,
+    summary: event.summary ?? null,
+    cutoff: cutoff.toISOString(),
+    recurrence,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -338,6 +545,8 @@ Subcommands:
   list          List calendar events
   get           Get a single event by ID
   create        Create a new calendar event
+  delete        Delete a calendar event
+  end-series    Remove future occurrences while preserving past occurrences
   availability  Check free/busy availability
   rsvp          RSVP to a calendar event
 
@@ -354,6 +563,12 @@ Run with <subcommand> --help for subcommand-specific options.`);
       break;
     case "create":
       await create(process.argv.slice(3));
+      break;
+    case "delete":
+      await remove(process.argv.slice(3));
+      break;
+    case "end-series":
+      await endSeries(process.argv.slice(3));
       break;
     case "availability":
       await availability(process.argv.slice(3));

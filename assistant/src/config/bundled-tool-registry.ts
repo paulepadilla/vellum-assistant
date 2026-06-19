@@ -67,6 +67,8 @@ import * as documentUpdate from "./bundled-skills/document-editor/tools/document
 import * as followupCreate from "./bundled-skills/followups/tools/followup-create.js";
 import * as followupList from "./bundled-skills/followups/tools/followup-list.js";
 import * as followupResolve from "./bundled-skills/followups/tools/followup-resolve.js";
+// ── google-oauth-setup ─────────────────────────────────────────────────────────
+import * as googleOauthSetupStart from "./bundled-skills/google-oauth-setup/tools/google-oauth-setup-start.js";
 // ── image-studio ───────────────────────────────────────────────────────────────
 import * as mediaGenerateImage from "./bundled-skills/image-studio/tools/media-generate-image.js";
 // ── media-processing ───────────────────────────────────────────────────────────
@@ -194,6 +196,12 @@ export const bundledToolRegistry = new Map<string, SkillToolScript>([
   ["followups:tools/followup-create.ts", followupCreate],
   ["followups:tools/followup-list.ts", followupList],
   ["followups:tools/followup-resolve.ts", followupResolve],
+
+  // google-oauth-setup
+  [
+    "google-oauth-setup:tools/google-oauth-setup-start.ts",
+    googleOauthSetupStart,
+  ],
 
   // image-studio
   ["image-studio:tools/media-generate-image.ts", mediaGenerateImage],

@@ -137,6 +137,10 @@ export function buildSanitizedEnv(): Record<string, string> {
       env[key] = process.env[key]!;
     }
   }
+  // Workspace-installed helpers such as the `assistant` CLI must be
+  // available to bundled skill scripts even when the daemon inherited a
+  // minimal PATH.
+  env.PATH = appendUniquePathEntries(env.PATH, [`${getWorkspaceDir()}/bin`]);
   if (isKataRuntime) {
     const kataAptDataRoot = env.VELLUM_APT_DATA_ROOT ?? KATA_APT_DATA_ROOT;
     env.VELLUM_APT_DATA_ROOT = kataAptDataRoot;

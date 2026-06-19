@@ -377,6 +377,8 @@ const DEFAULT_CONFIG: AgentLoopConfig = {
 };
 
 const MAX_STOP_CONTINUE_RETRIES = 1;
+const CONTINUE_AFTER_SKILL_LOAD_TEXT =
+  "<system_notice>Your previous response was empty after loading a skill. Continue the user's original request now, using the newly available skill tool as needed.</system_notice>";
 const MAX_TOKENS_STOP_REASONS = new Set([
   "length",
   "max_output_tokens",
@@ -815,6 +817,8 @@ export class AgentLoop {
     let producedVisibleTextThisRun = false;
     let toolUseTurns = 0;
     let stopContinueRetries = 0;
+    let forceTextOnlyNextCall = false;
+    let lastExecutedToolNames: string[] = [];
     let lastLlmCallTime = 0;
     let exitReason: ExitReason | null = null;
     let appendedNewMessages = false;
@@ -946,6 +950,8 @@ export class AgentLoop {
         const currentTools = this.resolveTools
           ? this.resolveTools(history)
           : this.tools;
+        const toolsForThisCall = forceTextOnlyNextCall ? [] : currentTools;
+        forceTextOnlyNextCall = false;
 
         // Resolve system prompt, per-turn maxTokens, and model
         const resolved = this.resolveSystemPrompt
@@ -1068,7 +1074,9 @@ export class AgentLoop {
         // bias against provider ground truth instead of ratcheting a
         // feedback loop against its own corrected output.
         const toolTokenBudget =
-          currentTools.length > 0 ? estimateToolsTokens(currentTools) : 0;
+          toolsForThisCall.length > 0
+            ? estimateToolsTokens(toolsForThisCall)
+            : 0;
         const preSendEstimatedTokens = estimatePromptTokensRaw(
           history,
           turnSystemPrompt,
@@ -1099,7 +1107,7 @@ export class AgentLoop {
         // substitution to streamed text while forwarding every other event
         // type through unchanged.
         const providerOptions: SendMessageOptions = {
-          tools: currentTools.length > 0 ? currentTools : undefined,
+          tools: toolsForThisCall.length > 0 ? toolsForThisCall : undefined,
           systemPrompt: turnSystemPrompt,
           config: providerConfig,
           onEvent: (event) => {
@@ -1413,6 +1421,18 @@ export class AgentLoop {
             // budget is spent. This bounds the hook-driven re-query loop.
             if (stopContinueRetries < MAX_STOP_CONTINUE_RETRIES) {
               stopContinueRetries++;
+              const followsSkillLoad =
+                lastExecutedToolNames.includes("skill_load");
+              forceTextOnlyNextCall = !followsSkillLoad;
+              if (followsSkillLoad) {
+                const lastMessage =
+                  finalStopCtx.messages[finalStopCtx.messages.length - 1];
+                if (lastMessage?.role === "user") {
+                  lastMessage.content = [
+                    { type: "text", text: CONTINUE_AFTER_SKILL_LOAD_TEXT },
+                  ];
+                }
+              }
               rlog.warn(
                 { turn: toolUseTurns, retry: stopContinueRetries },
                 "Model returned empty response after tool results — retrying",
@@ -1550,6 +1570,7 @@ export class AgentLoop {
           },
           "Tool execution complete",
         );
+        lastExecutedToolNames = toolUseBlocks.map((toolUse) => toolUse.name);
 
         // Merge sensitive output bindings from tool results into the
         // per-run substitution map. Bindings carry placeholder->value pairs

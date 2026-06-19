@@ -334,11 +334,12 @@ export function GoogleConnectScreen({
         path: { assistant_id: assistantId, provider: GOOGLE_PROVIDER_KEY },
         body: {
           requested_scopes: [],
-          redirect_after_connect: `${routes.account.oauth.popupComplete}?requestId=${requestId}`,
+          redirect_after_connect: `${window.location.origin}${routes.account.oauth.popupComplete}?requestId=${requestId}`,
         },
       },
       {
         onSuccess(data) {
+          console.log("OAuth Connect URL:", data.connect_url);
           if (popupRef.current && !popupRef.current.closed) {
             popupRef.current.location.href = data.connect_url;
           } else if (pendingRequestRef.current) {

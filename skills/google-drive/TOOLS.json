@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "name": "google_drive_list",
+      "description": "List the user's most recently modified, non-trashed Google Drive files. This is read-only and returns a limited page. `max_results` and the number of returned rows are never exact match counts when `hasMore` is true. Never count those rows or present them as exact bulk-action totals. Results include file name, type, modified date, owners, and web link.",
+      "category": "files",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Maximum number of files to return. Defaults to 5."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional Google Drive full-text search query."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Optional compatibility hint. Results are always ordered by modified time descending, regardless of this value."
+          },
+          "account": {
+            "type": "string",
+            "description": "Optional connected Google account email."
+          }
+        }
+      },
+      "executor": "scripts/drive-list.ts",
+      "execution_target": "host"
+    }
+  ]
+}

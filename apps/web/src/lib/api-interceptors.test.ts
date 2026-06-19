@@ -419,3 +419,62 @@ describe("api-interceptors / platform features gate", () => {
     expect(output.signal.aborted).toBe(false);
   });
 });
+
+describe("api-interceptors / local mode assistant ID rewrite", () => {
+  let savedPlatformMode: string | undefined;
+  let originalFetch: typeof fetch;
+
+  beforeAll(() => {
+    savedPlatformMode = process.env.VITE_PLATFORM_MODE;
+    delete process.env.VITE_PLATFORM_MODE;
+    originalFetch = globalThis.fetch;
+  });
+
+  afterAll(() => {
+    if (savedPlatformMode !== undefined) {
+      process.env.VITE_PLATFORM_MODE = savedPlatformMode;
+    }
+    globalThis.fetch = originalFetch;
+  });
+
+  test("rewrites the assistant ID in platform-bound URLs to the platform assistant UUID", async () => {
+    const testAssistant = {
+      assistantId: "local-a",
+      cloud: "local",
+      resources: { gatewayPort: 7830, daemonPort: 7821 },
+    };
+    
+    const { useLockfileStore } = await import("@/stores/lockfile-store");
+    useLockfileStore.setState({
+      lockfile: {
+        assistants: [testAssistant],
+        activeAssistant: "local-a",
+      },
+    });
+    localStorage.setItem("vellum:local:selectedAssistantId", "local-a");
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const urlStr = input.toString();
+      if (urlStr.includes("/v1/auth/info")) {
+        return new Response(JSON.stringify({
+          assistantId: "platform-uuid-1234",
+          authenticated: true,
+        }), { status: 200 });
+      }
+      return new Response("Not found", { status: 404 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any;
+
+    const input = new Request("https://platform.test/v1/assistants/local-a/oauth/connections/");
+    const output = await requestInterceptor(input);
+    expect(output.url).toBe("https://platform.test/v1/assistants/platform-uuid-1234/oauth/connections/");
+  });
+
+  test("does NOT rewrite assistant ID if it's the providers endpoint which gets rewritten to the gateway", async () => {
+    setSelfHostedConnection({ url: "http://localhost:7830", token: "act-tok" });
+
+    const input = new Request("https://platform.test/v1/assistants/local-a/oauth/providers");
+    const output = await daemonRequestInterceptor(input);
+    expect(output.url).toBe("http://localhost:7830/v1/assistants/local-a/oauth/providers");
+  });
+});

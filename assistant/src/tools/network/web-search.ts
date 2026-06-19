@@ -396,8 +396,7 @@ function errorResult(
  */
 function rawBodyDetail(body: unknown): { message: string } | undefined {
   if (body == null) return undefined;
-  const text =
-    typeof body === "string" ? body : safeStringifyBody(body);
+  const text = typeof body === "string" ? body : safeStringifyBody(body);
   const trimmed = text.trim();
   return trimmed ? { message: trimmed } : undefined;
 }
@@ -602,10 +601,7 @@ async function executeManagedBraveSearch(
   if (!proxyResult.ok) {
     // Keep billing/auth/unavailable mapping as specific copy; route genuine
     // platform 5xx (transport-level failures) to the friendly backend helper.
-    if (
-      proxyResult.kind === "platform-error" &&
-      proxyResult.status >= 500
-    ) {
+    if (proxyResult.kind === "platform-error" && proxyResult.status >= 500) {
       return backendFailureResult(
         query,
         "brave",
@@ -935,7 +931,7 @@ const WEB_SEARCH_FALLBACK_ORDER: readonly WebSearchProvider[] = Object.values(
 export const webSearchTool = {
   name: "web_search",
   description:
-    "Search the web and return results. Useful for looking up current information, documentation, or anything the assistant doesn't know.",
+    "Search the public web and return results. Useful for current information and documentation. Do not use it to access the user's private Calendar, Gmail, Drive, Contacts, or other connected accounts; load the relevant integration skill instead.",
   category: "network",
   executionTarget: "sandbox",
   defaultRiskLevel: RiskLevel.Low,

@@ -26,6 +26,7 @@ import {
   GEMINI_MAX_INLINE_AUDIO_BYTES,
   normalizeGeminiAudioMime,
 } from "./inline-media.js";
+import { parseGeminiTextToolCall } from "./text-tool-call.js";
 
 /**
  * Token/context-specific phrases that reliably indicate context-overflow
@@ -37,6 +38,31 @@ const GEMINI_CONTEXT_OVERFLOW_TOKEN_PATTERNS =
 
 const GEMINI_3_UNSIGNED_TOOL_CALL_THOUGHT_SIGNATURE =
   "context_engineering_is_the_way_to_go";
+
+function isLikelyGeminiToolReasoning(text: string): boolean {
+  if (
+    /(?:default_api|assistant)\.skill_(?:execute|load)\b/.test(text) ||
+    /\bthe tool call should be\b/i.test(text)
+  ) {
+    return true;
+  }
+
+  const planningSignals = [
+    /\bthe user(?:'s| is| wants| requested| has)\b/i,
+    /\bI (?:need|should|will|must|can|cannot|can't) (?:to )?(?:use|call|load|check|find|retrieve|construct|provide|try|delete|create|list|execute)\b/i,
+    /\b(?:revised )?plan\s*:/i,
+    /\b(?:tool|skill)(?:'s)? (?:documentation|description|argument|input|call|name|parameters?)\b/i,
+    /\b(?:event_id|skill_execute|skill_load|scripts\/[\w./-]+|--[\w-]+)\b/,
+    /\blet(?:'s| us) (?:try|start|re-examine|check|list|use)\b/i,
+    /\b(?:first|then|next),? I (?:need|will|should)\b/i,
+  ];
+  const signalCount = planningSignals.reduce(
+    (count, pattern) => count + (pattern.test(text) ? 1 : 0),
+    0,
+  );
+
+  return signalCount >= 3 || (text.length >= 600 && signalCount >= 2);
+}
 
 function isGemini3Model(model: string): boolean {
   return model.startsWith("gemini-3") || model.startsWith("models/gemini-3");
@@ -343,6 +369,9 @@ export class GeminiProvider implements Provider {
 
       // Accumulate from streaming chunks
       let fullText = "";
+      let pendingInitialText = "";
+      const textMode: "undecided" | "normal" =
+        tools && tools.length > 0 ? "undecided" : "normal";
       const functionCalls: Array<{
         id: string;
         name: string;
@@ -378,7 +407,11 @@ export class GeminiProvider implements Provider {
           const chunkText = chunk.text;
           if (chunkText) {
             fullText += chunkText;
-            onEvent?.({ type: "text_delta", text: chunkText });
+            if (textMode === "normal") {
+              onEvent?.({ type: "text_delta", text: chunkText });
+            } else {
+              pendingInitialText += chunkText;
+            }
           }
 
           // Extract function calls. Candidate parts carry provider metadata
@@ -428,7 +461,30 @@ export class GeminiProvider implements Provider {
 
       // Build content blocks
       const content: ContentBlock[] = [];
-      if (fullText) {
+      const recoveredTextToolCall =
+        functionCalls.length === 0 && tools && tools.length > 0
+          ? parseGeminiTextToolCall(
+              fullText,
+              new Set(tools.map((tool) => tool.name)),
+            )
+          : undefined;
+      if (recoveredTextToolCall) {
+        functionCalls.push({
+          id: `call_${crypto.randomUUID()}`,
+          name: recoveredTextToolCall.name,
+          args: recoveredTextToolCall.args,
+        });
+      }
+      const suppressToolReasoning =
+        functionCalls.length > 0 && isLikelyGeminiToolReasoning(fullText);
+      if (
+        pendingInitialText &&
+        !recoveredTextToolCall &&
+        !suppressToolReasoning
+      ) {
+        onEvent?.({ type: "text_delta", text: pendingInitialText });
+      }
+      if (fullText && !recoveredTextToolCall && !suppressToolReasoning) {
         content.push({ type: "text", text: fullText });
       }
       for (const fc of functionCalls) {
