@@ -31,6 +31,84 @@
       },
       "executor": "scripts/drive-list.ts",
       "execution_target": "host"
+    },
+    {
+      "name": "google_drive_create_folder",
+      "description": "Create a new folder in Google Drive.",
+      "category": "files",
+      "risk": "medium",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the new folder."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Optional parent folder ID where the new folder should be created."
+          },
+          "account": {
+            "type": "string",
+            "description": "Optional connected Google account email."
+          }
+        },
+        "required": ["name"]
+      },
+      "executor": "scripts/drive-create-folder.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "google_drive_upload",
+      "description": "Upload a local file from the host computer to Google Drive.",
+      "category": "files",
+      "risk": "medium",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "local_path": {
+            "type": "string",
+            "description": "Absolute path of the local file on the host machine."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional custom name for the uploaded file in Google Drive. Defaults to the base name of the local file."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Optional target folder ID in Google Drive where the file should be uploaded."
+          },
+          "account": {
+            "type": "string",
+            "description": "Optional connected Google account email."
+          }
+        },
+        "required": ["local_path"]
+      },
+      "executor": "scripts/drive-upload.ts",
+      "execution_target": "host"
+    },
+    {
+      "name": "google_drive_delete",
+      "description": "Move a Google Drive file or folder to the trash.",
+      "category": "files",
+      "risk": "medium",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "The ID of the file or folder to move to trash."
+          },
+          "account": {
+            "type": "string",
+            "description": "Optional connected Google account email."
+          }
+        },
+        "required": ["file_id"]
+      },
+      "executor": "scripts/drive-delete.ts",
+      "execution_target": "host"
     }
   ]
 }
