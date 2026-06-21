@@ -14,6 +14,7 @@ interface DriveFile {
   id: string;
   name: string;
   mimeType?: string;
+  size?: string;
   modifiedTime?: string;
   createdTime?: string;
   webViewLink?: string;
@@ -93,7 +94,7 @@ async function listDriveFiles(input: {
     orderBy: "modifiedTime desc",
     q: driveQuery,
     fields:
-      "nextPageToken,files(id,name,mimeType,modifiedTime,createdTime,webViewLink,owners(displayName,emailAddress))",
+      "nextPageToken,files(id,name,mimeType,size,modifiedTime,createdTime,webViewLink,owners(displayName,emailAddress))",
     spaces: "drive",
   });
 

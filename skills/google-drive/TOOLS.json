@@ -3,7 +3,7 @@
   "tools": [
     {
       "name": "google_drive_list",
-      "description": "List the user's most recently modified, non-trashed Google Drive files. This is read-only and returns a limited page. `max_results` and the number of returned rows are never exact match counts when `hasMore` is true. Never count those rows or present them as exact bulk-action totals. Results include file name, type, modified date, owners, and web link.",
+      "description": "List the user's most recently modified, non-trashed Google Drive files. This is read-only and returns a limited page. `max_results` and the number of returned rows are never exact match counts when `hasMore` is true. Never count those rows or present them as exact bulk-action totals. Results include file name, type, size (in bytes), modified date, owners, and web link.",
       "category": "files",
       "risk": "low",
       "input_schema": {
